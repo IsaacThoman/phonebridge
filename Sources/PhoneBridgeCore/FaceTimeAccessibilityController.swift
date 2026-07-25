@@ -9,7 +9,7 @@ public enum CallControlAccessibilityAuthorization {
 
   @discardableResult
   public static func request() -> Bool {
-    let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
+    let options = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
     return AXIsProcessTrustedWithOptions(options)
   }
 
