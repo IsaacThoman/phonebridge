@@ -46,7 +46,12 @@ final class PhoneBridgeApplication: NSObject, NSApplicationDelegate {
       let token = try configuration.token ?? PhoneBridgeAPI.generateToken()
       let api = PhoneBridgeAPI(token: token, version: Self.version)
       let server = HTTPServer(
-        configuration: HTTPServerConfiguration(host: configuration.host, port: configuration.port)
+        configuration: HTTPServerConfiguration(
+          host: configuration.host,
+          port: configuration.port,
+          tlsPKCS12: configuration.tlsPKCS12,
+          tlsPassphrase: configuration.tlsPassphrase
+        )
       ) { request in
         await api.handle(request)
       }
@@ -55,7 +60,8 @@ final class PhoneBridgeApplication: NSObject, NSApplicationDelegate {
 
       let browserHost =
         configuration.isLoopback ? "127.0.0.1" : ProcessInfo.processInfo.hostName
-      let url = URL(string: "http://\(browserHost):\(configuration.port)")!
+      let scheme = configuration.usesTLS ? "https" : "http"
+      let url = URL(string: "\(scheme)://\(browserHost):\(configuration.port)")!
       clientURL = url
       addressLabel.stringValue = url.absoluteString
 
@@ -66,9 +72,12 @@ final class PhoneBridgeApplication: NSObject, NSApplicationDelegate {
             self?.statusLabel.stringValue =
               configuration.isLoopback
               ? "Running privately on this Mac"
-              : "Running on the local network · development HTTP"
+              : configuration.usesTLS
+                ? "Running securely on the local network"
+                : "Running on the local network · development HTTP"
             self?.statusLabel.textColor =
-              configuration.isLoopback ? .secondaryLabelColor : .systemOrange
+              configuration.isLoopback || configuration.usesTLS
+              ? .secondaryLabelColor : .systemOrange
           }
           await server.waitUntilCancelled()
         } catch {
@@ -258,13 +267,25 @@ private struct AppConfiguration {
   let port: UInt16
   let token: String?
   let isLoopback: Bool
+  let tlsPKCS12: Data?
+  let tlsPassphrase: String?
+  var usesTLS: Bool { tlsPKCS12 != nil }
 
   init(arguments: [String]) throws {
     host = Self.option("--host", in: arguments) ?? "127.0.0.1"
     isLoopback = ["127.0.0.1", "::1", "localhost"].contains(host.lowercased())
-    guard isLoopback || arguments.contains("--allow-insecure-lan") else {
+    if let tlsPath = Self.option("--tls-p12", in: arguments) {
+      guard let data = FileManager.default.contents(atPath: tlsPath) else {
+        throw PhoneBridgeError.invalidArguments("Could not read TLS identity at \(tlsPath)")
+      }
+      tlsPKCS12 = data
+    } else {
+      tlsPKCS12 = nil
+    }
+    tlsPassphrase = ProcessInfo.processInfo.environment["PHONEBRIDGE_TLS_PASSWORD"]
+    guard isLoopback || tlsPKCS12 != nil || arguments.contains("--allow-insecure-lan") else {
       throw PhoneBridgeError.invalidArguments(
-        "Refusing a non-loopback HTTP listener without --allow-insecure-lan."
+        "Refusing non-loopback HTTP without --tls-p12 or --allow-insecure-lan."
       )
     }
     let rawPort = Self.option("--port", in: arguments).flatMap(UInt16.init) ?? 8742

@@ -1,16 +1,29 @@
 import Foundation
 @preconcurrency import Network
+import Security
 
 public struct HTTPServerConfiguration: Sendable, Equatable {
   public let host: String
   public let port: UInt16
   public let maximumRequestBytes: Int
+  public let tlsPKCS12: Data?
+  public let tlsPassphrase: String?
 
-  public init(host: String = "127.0.0.1", port: UInt16 = 8742, maximumRequestBytes: Int = 65_536) {
+  public init(
+    host: String = "127.0.0.1",
+    port: UInt16 = 8742,
+    maximumRequestBytes: Int = 65_536,
+    tlsPKCS12: Data? = nil,
+    tlsPassphrase: String? = nil
+  ) {
     self.host = host
     self.port = port
     self.maximumRequestBytes = maximumRequestBytes
+    self.tlsPKCS12 = tlsPKCS12
+    self.tlsPassphrase = tlsPassphrase
   }
+
+  public var usesTLS: Bool { tlsPKCS12 != nil }
 }
 
 public final class HTTPServer: @unchecked Sendable {
@@ -31,7 +44,7 @@ public final class HTTPServer: @unchecked Sendable {
       throw PhoneBridgeError.invalidArguments("Invalid server port: \(configuration.port)")
     }
 
-    let parameters = NWParameters.tcp
+    let parameters = try makeParameters()
     parameters.allowLocalEndpointReuse = true
     parameters.requiredLocalEndpoint = .hostPort(
       host: NWEndpoint.Host(configuration.host),
@@ -61,6 +74,33 @@ public final class HTTPServer: @unchecked Sendable {
       }
       listener.start(queue: queue)
     }
+  }
+
+  private func makeParameters() throws -> NWParameters {
+    guard let pkcs12 = configuration.tlsPKCS12 else {
+      return NWParameters.tcp
+    }
+    var importedItems: CFArray?
+    let passphraseKey = kSecImportExportPassphrase as String
+    let options = [passphraseKey: configuration.tlsPassphrase ?? ""] as CFDictionary
+    let status = SecPKCS12Import(pkcs12 as CFData, options, &importedItems)
+    guard status == errSecSuccess,
+      let items = importedItems as? [[String: Any]],
+      let first = items.first,
+      let identity = first[kSecImportItemIdentity as String] as! SecIdentity?
+    else {
+      throw PhoneBridgeError.invalidArguments(
+        "Could not import the TLS PKCS#12 identity (Security status \(status)).")
+    }
+    guard let networkIdentity = sec_identity_create(identity) else {
+      throw PhoneBridgeError.invalidArguments("Could not create the TLS server identity.")
+    }
+    let tlsOptions = NWProtocolTLS.Options()
+    sec_protocol_options_set_local_identity(
+      tlsOptions.securityProtocolOptions,
+      networkIdentity
+    )
+    return NWParameters(tls: tlsOptions, tcp: NWProtocolTCP.Options())
   }
 
   public func stop() {

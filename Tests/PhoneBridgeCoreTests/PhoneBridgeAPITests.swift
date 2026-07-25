@@ -107,6 +107,12 @@ struct PhoneBridgeAPITests {
     webRTC: StubWebRTC()
   )
 
+  @Test("Server configuration distinguishes TLS listeners")
+  func serverTLSConfiguration() {
+    #expect(HTTPServerConfiguration().usesTLS == false)
+    #expect(HTTPServerConfiguration(tlsPKCS12: Data([1])).usesTLS == true)
+  }
+
   @Test("Health is public")
   func health() async throws {
     let response = await api.handle(

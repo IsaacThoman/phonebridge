@@ -123,9 +123,17 @@ struct PhoneBridgeCLI {
   private static func runServer(_ arguments: [String]) async throws {
     let host = option("--host", in: arguments) ?? "127.0.0.1"
     let isLoopback = ["127.0.0.1", "::1", "localhost"].contains(host.lowercased())
-    guard isLoopback || arguments.contains("--allow-insecure-lan") else {
+    let tlsPath = option("--tls-p12", in: arguments)
+    let tlsPKCS12 = try tlsPath.map { path in
+      guard let data = FileManager.default.contents(atPath: path) else {
+        throw PhoneBridgeError.invalidArguments("Could not read TLS identity at \(path)")
+      }
+      return data
+    }
+    let tlsPassphrase = ProcessInfo.processInfo.environment["PHONEBRIDGE_TLS_PASSWORD"]
+    guard isLoopback || tlsPKCS12 != nil || arguments.contains("--allow-insecure-lan") else {
       throw PhoneBridgeError.invalidArguments(
-        "Refusing a non-loopback HTTP listener. Pass --allow-insecure-lan only on a trusted test network."
+        "Refusing non-loopback HTTP. Configure --tls-p12 or pass --allow-insecure-lan only on a trusted test network."
       )
     }
     let rawPort = intOption("--port", in: arguments) ?? 8742
@@ -135,13 +143,19 @@ struct PhoneBridgeCLI {
     let token = try option("--token", in: arguments) ?? PhoneBridgeAPI.generateToken()
     let api = PhoneBridgeAPI(token: token, version: version)
     let server = HTTPServer(
-      configuration: HTTPServerConfiguration(host: host, port: UInt16(rawPort))
+      configuration: HTTPServerConfiguration(
+        host: host,
+        port: UInt16(rawPort),
+        tlsPKCS12: tlsPKCS12,
+        tlsPassphrase: tlsPassphrase
+      )
     ) { request in
       await api.handle(request)
     }
     try await server.start()
-    print("PhoneBridge listening at http://\(host):\(rawPort)")
-    if !isLoopback {
+    let scheme = tlsPKCS12 == nil ? "http" : "https"
+    print("PhoneBridge listening at \(scheme)://\(host):\(rawPort)")
+    if !isLoopback, tlsPKCS12 == nil {
       print("WARNING: HTTP exposes the bearer token to the local network. Development use only.")
     }
     print("Pairing token: \(token)")
@@ -263,7 +277,7 @@ struct PhoneBridgeCLI {
         phonebridge call start --service <cellular|facetime-audio> --to <target> [--dry-run] [--json]
         phonebridge call status [--json]
         phonebridge call control <answer|hang_up|hold|resume|mute|unmute> [--id CALL_ID] [--json]
-        phonebridge server [--host 127.0.0.1] [--port 8742] [--token TOKEN] [--allow-insecure-lan]
+        phonebridge server [--host 127.0.0.1] [--port 8742] [--token TOKEN] [--tls-p12 IDENTITY.p12] [--allow-insecure-lan]
         phonebridge bridge probe [--json]
         phonebridge audio tap --host <facetime|phone> [--seconds N] [--json]
         phonebridge audio devices [--json]

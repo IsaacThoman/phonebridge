@@ -42,6 +42,14 @@ swift run phonebridge contacts search "Rick Astley" --json
 swift run phonebridge server --token "choose-a-long-random-token"
 # Open http://127.0.0.1:8742 and enter the token.
 
+# Serve a remote browser over HTTPS. The PKCS#12 identity should contain a
+# certificate trusted by the client and valid for the hostname it opens.
+PHONEBRIDGE_TLS_PASSWORD="p12 passphrase" \
+  swift run phonebridge server \
+  --host 0.0.0.0 \
+  --tls-p12 "/path/to/identity.p12" \
+  --token "choose-a-long-random-token"
+
 # Build a stable signed app bundle for macOS privacy permissions.
 sh scripts/build-app.sh
 open dist/PhoneBridge.app
@@ -108,8 +116,9 @@ Apple SDK contract, so a macOS update can still change or remove this behavior.
 - The server binds to loopback unless explicitly configured otherwise.
 - The current development server uses bearer authentication over HTTP. It refuses
   non-loopback listeners unless `--allow-insecure-lan` is also supplied. Use that
-  escape hatch only on an isolated test network; authenticated TLS is required
-  before exposing PhoneBridge remotely.
+  escape hatch only on an isolated test network. For normal remote use, supply a
+  PKCS#12 server identity with `--tls-p12`; the passphrase is read from
+  `PHONEBRIDGE_TLS_PASSWORD`. HTTPS is required for browser microphone access.
 - The browser receives only minimal contact search results.
 - Every call request identifies the exact target and service.
 - Private call control reports selector-level capabilities instead of assuming
