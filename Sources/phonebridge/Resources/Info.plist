@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleIdentifier</key>
+  <string>com.isaacthoman.phonebridge.cli</string>
+  <key>CFBundleName</key>
+  <string>phonebridge</string>
+  <key>CFBundleShortVersionString</key>
+  <string>0.1.0</string>
+  <key>NSContactsUsageDescription</key>
+  <string>PhoneBridge uses your contacts to let you choose who to call.</string>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>PhoneBridge uses the microphone for calls proxied to an authenticated browser.</string>
+  <key>NSAudioCaptureUsageDescription</key>
+  <string>PhoneBridge captures active call audio so it can be securely proxied to your browser.</string>
+</dict>
+</plist>

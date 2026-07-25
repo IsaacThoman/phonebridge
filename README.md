@@ -1,2 +1,71 @@
 # phonebridge
-Remote control and WebRTC audio bridge for cellular and FaceTime Audio calls on macOS
+
+Remote control and WebRTC audio bridge for cellular and FaceTime Audio calls on macOS.
+
+> [!IMPORTANT]
+> PhoneBridge is under active development. Call launching uses supported macOS URL
+> handling today; call control, WebRTC media, and the experimental private bridge
+> are being implemented and validated on dedicated test hardware.
+
+## Goals
+
+- Search macOS Contacts without uploading the address book.
+- Place iPhone-relayed cellular calls and FaceTime Audio calls.
+- Answer, end, mute, hold, and send DTMF from an authenticated web client.
+- Proxy two-way call audio through WebRTC.
+- Provide a streaming JSON-RPC/CLI surface for agents and scripts.
+- Support macOS Sequoia's FaceTime call host and macOS Tahoe's Phone app.
+- Keep private-framework injection optional and capability-driven.
+
+## Current CLI
+
+```bash
+swift build
+
+# Inspect a command without placing a call.
+swift run phonebridge call start \
+  --service cellular \
+  --to "+1 (415) 555-1212" \
+  --dry-run \
+  --json
+
+# FaceTime Audio accepts a phone number or Apple Account email.
+swift run phonebridge call start \
+  --service facetime-audio \
+  --to "person@example.com" \
+  --dry-run
+
+# macOS prompts for Contacts access on first use.
+swift run phonebridge contacts search "Rick Astley" --json
+```
+
+## Safety model
+
+- The future server will bind to loopback unless explicitly configured otherwise.
+- Remote access requires pairing and authenticated HTTPS.
+- The browser receives only minimal contact search results.
+- Every call request identifies the exact target and service.
+- Experimental injection refuses to run with unknown SIP state and reports
+  selector-level capabilities instead of assuming private APIs exist.
+- Call audio is never recorded unless a separate, explicit recording feature is
+  requested and all legally required consent is obtained.
+
+## Platform strategy
+
+| macOS | Apple call host | PhoneBridge adapter |
+|---|---|---|
+| Sequoia 15 | FaceTime.app | URL launch, Accessibility, optional injected bridge |
+| Tahoe 26 | Phone.app | URL launch, Accessibility, optional injected bridge |
+
+The injected bridge is research-only. It requires reduced system protections,
+is not suitable for App Store distribution, and must never be required for basic
+call launching or contact search.
+
+## Development
+
+```bash
+swift test
+swift run phonebridge --help
+```
+
+License: MIT.
