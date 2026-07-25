@@ -265,11 +265,19 @@ function renderContacts(contacts, query) {
 
       const actions = document.createElement("div");
       actions.className = "call-actions";
-      for (const service of endpoint.services) {
+      const services = [...endpoint.services].sort(
+        (left, right) =>
+          (left === "facetime_audio" ? 0 : 1) - (right === "facetime_audio" ? 0 : 1),
+      );
+      for (const [index, service] of services.entries()) {
         const button = document.createElement("button");
         button.type = "button";
-        button.className = "call-button";
-        button.textContent = service === "cellular" ? "Phone" : "FaceTime";
+        button.className = `call-button${index === 0 ? " preferred" : ""}`;
+        button.textContent = service === "cellular" ? "Phone" : "FaceTime Audio";
+        if (index === 0 && service === "facetime_audio") {
+          button.setAttribute("aria-label", "FaceTime Audio (preferred)");
+          button.title = "Preferred when available";
+        }
         button.addEventListener("click", () => {
           prepareCall(contact.displayName, endpoint.value, service);
         });

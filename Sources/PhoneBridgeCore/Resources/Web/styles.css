@@ -518,6 +518,12 @@ h1 {
   background: var(--acid);
 }
 
+.call-button.preferred {
+  color: var(--acid-ink);
+  background: var(--acid);
+  border-color: var(--acid);
+}
+
 footer {
   display: flex;
   gap: 12px;

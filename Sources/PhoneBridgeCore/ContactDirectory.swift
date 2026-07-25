@@ -108,7 +108,7 @@ public actor MacContactDirectory: ContactDirectory {
           kind: .phone,
           label: CNLabeledValue<NSString>.localizedString(forLabel: labeled.label ?? ""),
           value: value,
-          services: [.cellular, .facetimeAudio]
+          services: [.facetimeAudio, .cellular]
         ))
     }
 
