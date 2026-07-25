@@ -26,6 +26,13 @@ cp "Sources/PhoneBridgeMacApp/Resources/Info.plist" "${staging_app}/Contents/Inf
 cp -R "${bin_path}/phonebridge_PhoneBridgeCore.bundle" "${staging_app}/Contents/Resources/"
 cp -R "${bin_path}/WebRTC.framework" "${staging_app}/Contents/Frameworks/"
 
+if ! otool -l "${staging_app}/Contents/MacOS/PhoneBridgeMacApp" |
+  awk '/cmd LC_RPATH/{getline; getline; print $2}' |
+  grep -Fqx '@executable_path/../Frameworks'; then
+  echo "PhoneBridgeMacApp is missing its bundled framework runtime path" >&2
+  exit 1
+fi
+
 codesign --force --deep --sign - "${staging_app}"
 codesign --verify --deep --strict --verbose=2 "${staging_app}"
 mkdir -p "${output_root}"
