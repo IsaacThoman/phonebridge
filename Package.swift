@@ -11,9 +11,12 @@ let package = Package(
   targets: [
     .target(
       name: "PhoneBridgeCore",
+      resources: [.process("Resources/Web")],
       linkerSettings: [
         .linkedFramework("AppKit"),
         .linkedFramework("Contacts"),
+        .linkedFramework("Network"),
+        .linkedFramework("Security"),
       ]
     ),
     .executableTarget(

@@ -28,6 +28,8 @@ struct PhoneBridgeCLI {
       try await runContacts(Array(arguments.dropFirst()))
     case "call":
       try await runCall(Array(arguments.dropFirst()))
+    case "server":
+      try await runServer(Array(arguments.dropFirst()))
     case "help", "--help", "-h":
       printHelp()
     default:
@@ -81,6 +83,35 @@ struct PhoneBridgeCLI {
     }
   }
 
+  private static func runServer(_ arguments: [String]) async throws {
+    let host = option("--host", in: arguments) ?? "127.0.0.1"
+    let isLoopback = ["127.0.0.1", "::1", "localhost"].contains(host.lowercased())
+    guard isLoopback || arguments.contains("--allow-insecure-lan") else {
+      throw PhoneBridgeError.invalidArguments(
+        "Refusing a non-loopback HTTP listener. Pass --allow-insecure-lan only on a trusted test network."
+      )
+    }
+    let rawPort = intOption("--port", in: arguments) ?? 8742
+    guard (1...65_535).contains(rawPort) else {
+      throw PhoneBridgeError.invalidArguments("Port must be between 1 and 65535")
+    }
+    let token = try option("--token", in: arguments) ?? PhoneBridgeAPI.generateToken()
+    let api = PhoneBridgeAPI(token: token, version: version)
+    let server = HTTPServer(
+      configuration: HTTPServerConfiguration(host: host, port: UInt16(rawPort))
+    ) { request in
+      await api.handle(request)
+    }
+    try await server.start()
+    print("PhoneBridge listening at http://\(host):\(rawPort)")
+    if !isLoopback {
+      print("WARNING: HTTP exposes the bearer token to the local network. Development use only.")
+    }
+    print("Pairing token: \(token)")
+    print("Keep this token private. Press Control-C to stop.")
+    await server.waitUntilCancelled()
+  }
+
   private static func option(_ name: String, in arguments: [String]) -> String? {
     guard let index = arguments.firstIndex(of: name), arguments.indices.contains(index + 1) else {
       return nil
@@ -127,6 +158,7 @@ struct PhoneBridgeCLI {
       Commands:
         phonebridge contacts search <query> [--limit N] [--json]
         phonebridge call start --service <cellular|facetime-audio> --to <target> [--dry-run] [--json]
+        phonebridge server [--host 127.0.0.1] [--port 8742] [--token TOKEN] [--allow-insecure-lan]
         phonebridge version
       """
     )

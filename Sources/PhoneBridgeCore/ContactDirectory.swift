@@ -22,15 +22,23 @@ public actor MacContactDirectory: ContactDirectory {
     case .restricted:
       throw PhoneBridgeError.contactsRestricted
     case .notDetermined:
-      let granted = try await withCheckedThrowingContinuation {
-        (continuation: CheckedContinuation<Bool, Error>) in
-        store.requestAccess(for: .contacts) { granted, error in
-          if let error {
-            continuation.resume(throwing: error)
-          } else {
-            continuation.resume(returning: granted)
+      let granted: Bool
+      do {
+        granted = try await withCheckedThrowingContinuation {
+          (continuation: CheckedContinuation<Bool, Error>) in
+          store.requestAccess(for: .contacts) { granted, error in
+            if let error {
+              continuation.resume(throwing: error)
+            } else {
+              continuation.resume(returning: granted)
+            }
           }
         }
+      } catch {
+        if (error as NSError).domain == CNErrorDomain {
+          throw PhoneBridgeError.contactsDenied
+        }
+        throw error
       }
       guard granted else { throw PhoneBridgeError.contactsDenied }
     case .limited:
@@ -55,25 +63,35 @@ public actor MacContactDirectory: ContactDirectory {
     request.sortOrder = .userDefault
 
     var results: [ContactSummary] = []
-    try store.enumerateContacts(with: request) { contact, stop in
-      let displayName =
-        CNContactFormatter.string(from: contact, style: .fullName)?
-        .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-      let endpoints = Self.endpoints(for: contact)
-      guard !endpoints.isEmpty else { return }
+    do {
+      try store.enumerateContacts(with: request) { contact, stop in
+        let displayName =
+          CNContactFormatter.string(from: contact, style: .fullName)?
+          .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let endpoints = Self.endpoints(for: contact)
+        guard !endpoints.isEmpty else { return }
 
-      let searchable = ([displayName] + endpoints.map(\.value)).joined(separator: " ")
-      guard trimmed.isEmpty || searchable.localizedCaseInsensitiveContains(trimmed) else { return }
+        let searchable = ([displayName] + endpoints.map(\.value)).joined(separator: " ")
+        guard trimmed.isEmpty || searchable.localizedCaseInsensitiveContains(trimmed) else {
+          return
+        }
 
-      results.append(
-        ContactSummary(
-          id: contact.identifier,
-          displayName: displayName.isEmpty ? endpoints[0].value : displayName,
-          endpoints: endpoints
-        ))
-      if results.count >= max(1, min(limit, 100)) {
-        stop.pointee = true
+        results.append(
+          ContactSummary(
+            id: contact.identifier,
+            displayName: displayName.isEmpty ? endpoints[0].value : displayName,
+            endpoints: endpoints
+          ))
+        if results.count >= max(1, min(limit, 100)) {
+          stop.pointee = true
+        }
       }
+    } catch {
+      let cocoaError = error as NSError
+      if cocoaError.domain == CNErrorDomain {
+        throw PhoneBridgeError.contactsDenied
+      }
+      throw error
     }
     return results
   }

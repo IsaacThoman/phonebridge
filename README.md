@@ -37,12 +37,19 @@ swift run phonebridge call start \
 
 # macOS prompts for Contacts access on first use.
 swift run phonebridge contacts search "Rick Astley" --json
+
+# Run the authenticated local web client.
+swift run phonebridge server --token "choose-a-long-random-token"
+# Open http://127.0.0.1:8742 and enter the token.
 ```
 
 ## Safety model
 
-- The future server will bind to loopback unless explicitly configured otherwise.
-- Remote access requires pairing and authenticated HTTPS.
+- The server binds to loopback unless explicitly configured otherwise.
+- The current development server uses bearer authentication over HTTP. It refuses
+  non-loopback listeners unless `--allow-insecure-lan` is also supplied. Use that
+  escape hatch only on an isolated test network; authenticated TLS is required
+  before exposing PhoneBridge remotely.
 - The browser receives only minimal contact search results.
 - Every call request identifies the exact target and service.
 - Experimental injection refuses to run with unknown SIP state and reports
