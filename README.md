@@ -41,6 +41,10 @@ swift run phonebridge contacts search "Rick Astley" --json
 # Run the authenticated local web client.
 swift run phonebridge server --token "choose-a-long-random-token"
 # Open http://127.0.0.1:8742 and enter the token.
+
+# Build a stable signed app bundle for macOS privacy permissions.
+sh scripts/build-app.sh
+open dist/PhoneBridge.app
 ```
 
 ## Safety model

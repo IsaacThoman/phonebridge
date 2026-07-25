@@ -7,6 +7,7 @@ let package = Package(
   products: [
     .library(name: "PhoneBridgeCore", targets: ["PhoneBridgeCore"]),
     .executable(name: "phonebridge", targets: ["phonebridge"]),
+    .executable(name: "PhoneBridgeMacApp", targets: ["PhoneBridgeMacApp"]),
   ],
   targets: [
     .target(
@@ -30,6 +31,20 @@ let package = Package(
           "-Xlinker", "__info_plist",
           "-Xlinker", "Sources/phonebridge/Resources/Info.plist",
         ])
+      ]
+    ),
+    .executableTarget(
+      name: "PhoneBridgeMacApp",
+      dependencies: ["PhoneBridgeCore"],
+      exclude: ["Resources/Info.plist"],
+      linkerSettings: [
+        .linkedFramework("AppKit"),
+        .unsafeFlags([
+          "-Xlinker", "-sectcreate",
+          "-Xlinker", "__TEXT",
+          "-Xlinker", "__info_plist",
+          "-Xlinker", "Sources/PhoneBridgeMacApp/Resources/Info.plist",
+        ]),
       ]
     ),
     .testTarget(
