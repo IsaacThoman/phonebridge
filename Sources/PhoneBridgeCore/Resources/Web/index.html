@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <meta
+      name="description"
+      content="Private remote control for cellular and FaceTime Audio calls on your Mac."
+    />
+    <title>PhoneBridge</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <script src="/app.js" defer></script>
+  </head>
+  <body>
+    <main class="shell">
+      <header class="masthead">
+        <a class="brand" href="/" aria-label="PhoneBridge home">
+          <span class="brand-mark" aria-hidden="true">pb</span>
+          <span>PhoneBridge</span>
+        </a>
+        <div class="connection" id="connectionStatus">
+          <span class="status-dot" aria-hidden="true"></span>
+          <span>Pairing required</span>
+        </div>
+      </header>
+
+      <section class="hero" aria-labelledby="heroTitle">
+        <p class="eyebrow">Your Mac. Your number. Anywhere.</p>
+        <h1 id="heroTitle">Who do you want to call?</h1>
+        <p class="hero-copy">
+          Search the contacts stored on your Mac, then choose cellular or FaceTime Audio.
+        </p>
+
+        <form class="search-card" id="searchForm" role="search">
+          <label class="sr-only" for="contactSearch">Search contacts</label>
+          <span class="search-icon" aria-hidden="true"></span>
+          <input
+            id="contactSearch"
+            name="q"
+            type="search"
+            placeholder="Search names, numbers, or email"
+            autocomplete="off"
+            disabled
+          />
+          <button type="submit" disabled>Search</button>
+        </form>
+      </section>
+
+      <section class="live-call-panel" id="liveCallPanel" aria-labelledby="liveCallTitle" hidden>
+        <div class="section-heading">
+          <div>
+            <p class="section-kicker">Call control</p>
+            <h2 id="liveCallTitle">Calls on this Mac</h2>
+          </div>
+          <span class="host-badge" id="callControlStatus">Watching…</span>
+        </div>
+        <div class="live-call-list" id="liveCallList" aria-live="polite"></div>
+      </section>
+
+      <section class="media-panel" aria-labelledby="mediaTitle">
+        <div>
+          <p class="section-kicker">Live audio</p>
+          <h2 id="mediaTitle">Browser media bridge</h2>
+          <p id="mediaStatus">
+            Connect this browser’s microphone and speaker to the Mac over WebRTC.
+          </p>
+        </div>
+        <button class="media-button" id="mediaButton" type="button" disabled>
+          Connect audio
+        </button>
+        <audio id="remoteAudio" autoplay></audio>
+      </section>
+
+      <section class="results-section" aria-live="polite" aria-busy="false">
+        <div class="section-heading">
+          <div>
+            <p class="section-kicker">Mac contacts</p>
+            <h2 id="resultsTitle">Ready when you are</h2>
+          </div>
+          <span class="host-badge" id="hostBadge">Checking host…</span>
+        </div>
+
+        <div class="empty-state" id="emptyState">
+          <div class="signal" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+          <p>Pair this browser, then search without uploading your address book.</p>
+        </div>
+        <div class="contact-grid" id="contactResults"></div>
+      </section>
+
+      <footer>
+        <span>Authenticated local control</span>
+        <span class="footer-separator">•</span>
+        <span>Contacts stay on your Mac</span>
+      </footer>
+    </main>
+
+    <dialog class="pair-dialog" id="pairDialog">
+      <form method="dialog" id="pairForm">
+        <div class="dialog-mark" aria-hidden="true">pb</div>
+        <p class="section-kicker">Secure pairing</p>
+        <h2>Connect to your Mac</h2>
+        <p>Enter the one-time token shown by PhoneBridge on the Mac.</p>
+        <label for="pairToken">Pairing token</label>
+        <input
+          id="pairToken"
+          type="password"
+          autocomplete="one-time-code"
+          spellcheck="false"
+          required
+        />
+        <p class="form-error" id="pairError" role="alert"></p>
+        <button class="primary-button" type="submit">Pair browser</button>
+      </form>
+    </dialog>
+
+    <dialog class="call-dialog" id="callDialog">
+      <form method="dialog" id="callForm">
+        <p class="section-kicker">Confirm outgoing call</p>
+        <h2 id="callName">Call contact?</h2>
+        <p id="callDetail"></p>
+        <div class="dialog-actions">
+          <button class="secondary-button" value="cancel">Cancel</button>
+          <button class="primary-button" id="confirmCall" value="default">Start call</button>
+        </div>
+      </form>
+    </dialog>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  </body>
+</html>
