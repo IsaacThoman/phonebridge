@@ -80,7 +80,9 @@ final class FaceTimeAccessibilityRuntime {
     let hasMute = findButton(in: elements, matching: ["mute", "unmute"]) != nil
     let muted = findButton(in: elements, matching: ["unmute"]) != nil
     let onHold = findButton(in: elements, matching: ["resume", "unhold"]) != nil
-    let supportsDTMF = findButton(in: elements, matching: ["keypad", "dial pad"]) != nil
+    let supportsDTMF =
+      findButton(in: elements, matching: ["keypad", "dial pad"]) != nil
+      || findDTMFButton(in: elements, value: "1") != nil
 
     return ActiveCallSummary(
       id: "facetime-accessibility",
@@ -143,18 +145,24 @@ final class FaceTimeAccessibilityRuntime {
     case .unmute:
       button = findButton(in: elements, matching: ["unmute"])
     case .sendDTMF:
-      guard let keypad = findButton(in: elements, matching: ["keypad", "dial pad"]) else {
-        throw PhoneBridgeError.invalidArguments("This call does not expose a keypad.")
-      }
-      try press(keypad)
-      RunLoop.main.run(until: Date().addingTimeInterval(0.2))
-      elements = callElements()
       let key = try DTMFKey(request.dtmf ?? "")
       let value = String(UnicodeScalar(key.rawValue))
-      guard let digit = findButton(in: elements, exact: value) else {
+      if findDTMFButton(in: elements, value: value) == nil {
+        guard let keypad = findButton(in: elements, matching: ["keypad", "dial pad"]) else {
+          throw PhoneBridgeError.invalidArguments("This call does not expose a keypad.")
+        }
+        try press(keypad)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.5))
+        elements = callElements()
+      }
+      guard let digit = findDTMFButton(in: elements, value: value) else {
         throw PhoneBridgeError.invalidArguments("The requested keypad key is unavailable.")
       }
       try press(digit)
+      RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+      if let back = findButton(in: callElements(), matching: ["back"]) {
+        try? press(back)
+      }
       return receipt(for: request)
     }
 
@@ -282,9 +290,12 @@ final class FaceTimeAccessibilityRuntime {
     return nil
   }
 
-  private func findButton(in elements: [ElementInfo], exact value: String) -> ElementInfo? {
-    elements.first { info in
-      info.role == (kAXButtonRole as String) && normalize(info.label) == normalize(value)
+  private func findDTMFButton(in elements: [ElementInfo], value: String) -> ElementInfo? {
+    let expected = normalize(value)
+    return elements.first { info in
+      guard info.role == (kAXButtonRole as String) else { return false }
+      let label = normalize(info.label)
+      return label == expected || label.hasPrefix("\(expected),")
     }
   }
 
