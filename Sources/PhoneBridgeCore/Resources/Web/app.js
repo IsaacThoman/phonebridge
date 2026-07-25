@@ -62,7 +62,9 @@ function setPaired(paired, label = "") {
     : "Pairing required";
   elements.searchInput.disabled = !paired;
   elements.searchButton.disabled = !paired;
-  elements.mediaButton.disabled = !paired || !navigator.mediaDevices?.getUserMedia;
+  const transportOnly = new URLSearchParams(window.location.search).has("transport-only");
+  elements.mediaButton.disabled =
+    !paired || (!transportOnly && !navigator.mediaDevices?.getUserMedia);
 }
 
 async function validatePairing() {
@@ -308,14 +310,14 @@ elements.mediaButton.addEventListener("click", async () => {
     await disconnectMedia();
     return;
   }
-  if (!navigator.mediaDevices?.getUserMedia) {
+  const transportOnly = new URLSearchParams(window.location.search).has("transport-only");
+  if (!transportOnly && !navigator.mediaDevices?.getUserMedia) {
     elements.mediaStatus.textContent =
       "Microphone access requires HTTPS, except when using localhost on the Mac.";
     return;
   }
 
   elements.mediaButton.disabled = true;
-  const transportOnly = new URLSearchParams(window.location.search).has("transport-only");
   elements.mediaStatus.textContent = transportOnly
     ? "Starting transport-only diagnostic…"
     : "Requesting microphone access…";
