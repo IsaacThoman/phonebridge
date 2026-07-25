@@ -85,11 +85,15 @@ struct PhoneBridgeCLI {
         let action = CallControlAction(rawValue: actionRaw)
       else {
         throw PhoneBridgeError.invalidArguments(
-          "Usage: phonebridge call control <answer|hang_up|hold|resume|mute|unmute> [--id CALL_ID] [--json]"
+          "Usage: phonebridge call control <answer|hang_up|hold|resume|mute|unmute|send_dtmf> [--id CALL_ID] [--digit KEY] [--json]"
         )
       }
       let receipt = try await PrivateCallController().perform(
-        CallControlRequest(action: action, callID: option("--id", in: rest))
+        CallControlRequest(
+          action: action,
+          callID: option("--id", in: rest),
+          dtmf: option("--digit", in: rest)
+        )
       )
       if rest.contains("--json") {
         try printJSON(receipt)
@@ -276,7 +280,7 @@ struct PhoneBridgeCLI {
         phonebridge contacts search <query> [--limit N] [--json]
         phonebridge call start --service <cellular|facetime-audio> --to <target> [--dry-run] [--json]
         phonebridge call status [--json]
-        phonebridge call control <answer|hang_up|hold|resume|mute|unmute> [--id CALL_ID] [--json]
+        phonebridge call control <answer|hang_up|hold|resume|mute|unmute|send_dtmf> [--id CALL_ID] [--digit KEY] [--json]
         phonebridge server [--host 127.0.0.1] [--port 8742] [--token TOKEN] [--tls-p12 IDENTITY.p12] [--allow-insecure-lan]
         phonebridge bridge probe [--json]
         phonebridge audio tap --host <facetime|phone> [--seconds N] [--json]

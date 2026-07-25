@@ -81,7 +81,8 @@ private actor StubCallController: CallControlling {
           video: false,
           canAnswer: true,
           onHold: false,
-          muted: false
+          muted: false,
+          supportsDTMF: true
         )
       ]
     )
@@ -111,6 +112,18 @@ struct PhoneBridgeAPITests {
   func serverTLSConfiguration() {
     #expect(HTTPServerConfiguration().usesTLS == false)
     #expect(HTTPServerConfiguration(tlsPKCS12: Data([1])).usesTLS == true)
+  }
+
+  @Test("DTMF accepts keypad characters and rejects strings")
+  func dtmfValidation() throws {
+    #expect(try DTMFKey("#").rawValue == Character("#").asciiValue)
+    #expect(try DTMFKey("a").rawValue == Character("A").asciiValue)
+    #expect(throws: PhoneBridgeError.self) {
+      try DTMFKey("12")
+    }
+    #expect(throws: PhoneBridgeError.self) {
+      try DTMFKey("X")
+    }
   }
 
   @Test("Health is public")

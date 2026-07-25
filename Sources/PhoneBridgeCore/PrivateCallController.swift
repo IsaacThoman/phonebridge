@@ -9,15 +9,18 @@ public enum CallControlAction: String, Codable, Sendable {
   case resume
   case mute
   case unmute
+  case sendDTMF = "send_dtmf"
 }
 
 public struct CallControlRequest: Codable, Sendable, Equatable {
   public let action: CallControlAction
   public let callID: String?
+  public let dtmf: String?
 
-  public init(action: CallControlAction, callID: String? = nil) {
+  public init(action: CallControlAction, callID: String? = nil, dtmf: String? = nil) {
     self.action = action
     self.callID = callID
+    self.dtmf = dtmf
   }
 }
 
@@ -32,6 +35,7 @@ public struct ActiveCallSummary: Codable, Sendable, Equatable {
   public let canAnswer: Bool
   public let onHold: Bool
   public let muted: Bool
+  public let supportsDTMF: Bool
 
   public init(
     id: String,
@@ -43,7 +47,8 @@ public struct ActiveCallSummary: Codable, Sendable, Equatable {
     video: Bool,
     canAnswer: Bool,
     onHold: Bool,
-    muted: Bool
+    muted: Bool,
+    supportsDTMF: Bool
   ) {
     self.id = id
     self.displayName = displayName
@@ -55,6 +60,7 @@ public struct ActiveCallSummary: Codable, Sendable, Equatable {
     self.canAnswer = canAnswer
     self.onHold = onHold
     self.muted = muted
+    self.supportsDTMF = supportsDTMF
   }
 }
 
@@ -83,6 +89,21 @@ public struct CallControlReceipt: Codable, Sendable, Equatable {
 public protocol CallControlling: Sendable {
   func snapshot() async throws -> CallControlSnapshot
   func perform(_ request: CallControlRequest) async throws -> CallControlReceipt
+}
+
+struct DTMFKey: Equatable, Sendable {
+  let rawValue: UInt8
+
+  init(_ value: String) throws {
+    guard value.utf8.count == 1,
+      let character = value.uppercased().utf8.first,
+      "0123456789*#ABCD".utf8.contains(character)
+    else {
+      throw PhoneBridgeError.invalidArguments(
+        "DTMF must be one of 0-9, *, #, or A-D.")
+    }
+    rawValue = character
+  }
 }
 
 /// Capability-gated access to the same TelephonyUtilities call model used by FaceTime
@@ -142,6 +163,9 @@ public final class PrivateCallController: CallControlling {
       try runtime.invokeBool(call, selector: "setUplinkMuted:", argument: true)
     case .unmute:
       try runtime.invokeBool(call, selector: "setUplinkMuted:", argument: false)
+    case .sendDTMF:
+      let key = try DTMFKey(request.dtmf ?? "")
+      try runtime.invokeUInt8(call, selector: "playDTMFToneForKey:", argument: key.rawValue)
     }
 
     return CallControlReceipt(
@@ -202,7 +226,8 @@ private final class TelephonyUtilitiesRuntime: @unchecked Sendable {
       video: boolValue(call, selector: "isVideo") ?? false,
       canAnswer: boolValue(call, selector: "canAnswerCall") ?? false,
       onHold: boolValue(call, selector: "isOnHold") ?? false,
-      muted: boolValue(call, selector: "isUplinkMuted") ?? false
+      muted: boolValue(call, selector: "isUplinkMuted") ?? false,
+      supportsDTMF: boolValue(call, selector: "supportsDTMFTones") ?? false
     )
   }
 
@@ -261,6 +286,23 @@ private final class TelephonyUtilitiesRuntime: @unchecked Sendable {
     typealias Function = @convention(c) (AnyObject, Selector) -> Void
     let function = unsafeBitCast(method_getImplementation(method), to: Function.self)
     function(object, selector)
+  }
+
+  func invokeUInt8(
+    _ object: AnyObject,
+    selector name: String,
+    argument: UInt8
+  ) throws {
+    let selector = NSSelectorFromString(name)
+    guard let method = class_getInstanceMethod(object_getClass(object), selector),
+      hasEncodingPrefix(method, "v20@0:8C16")
+    else {
+      throw PhoneBridgeError.unsupportedPlatform(
+        "Required call-control operation \(name) is unavailable.")
+    }
+    typealias Function = @convention(c) (AnyObject, Selector, UInt8) -> Void
+    let function = unsafeBitCast(method_getImplementation(method), to: Function.self)
+    function(object, selector, argument)
   }
 
   private func objectValue(_ object: AnyObject, selector name: String) -> AnyObject? {

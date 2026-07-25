@@ -310,6 +310,29 @@ h1 {
   border-color: rgba(255, 111, 116, 0.42);
 }
 
+.dtmf-pad {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(6, minmax(38px, 1fr));
+  gap: 7px;
+  padding-top: 4px;
+}
+
+.dtmf-key {
+  min-height: 34px;
+  color: var(--muted);
+  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-weight: 800;
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.dtmf-key:hover {
+  color: var(--acid-ink);
+  background: var(--acid);
+}
+
 .no-live-calls {
   margin: 0;
   color: var(--muted);
@@ -672,6 +695,10 @@ dialog input:focus {
 
   .control-button {
     flex: 1;
+  }
+
+  .dtmf-pad {
+    grid-template-columns: repeat(3, 1fr);
   }
 
   .contact-grid {

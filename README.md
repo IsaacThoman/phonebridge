@@ -66,6 +66,7 @@ swift run phonebridge call control hold --id CALL_UUID
 swift run phonebridge call control resume --id CALL_UUID
 swift run phonebridge call control mute --id CALL_UUID
 swift run phonebridge call control unmute --id CALL_UUID
+swift run phonebridge call control send_dtmf --id CALL_UUID --digit 1
 swift run phonebridge call control hang_up --id CALL_UUID
 
 # Inspect installed audio devices and test a call-host process tap.

@@ -155,19 +155,37 @@ function renderLiveCalls(calls) {
       actions.append(button);
     }
     row.append(details, actions);
+    if (call.supportsDTMF && !call.canAnswer) {
+      const keypad = document.createElement("div");
+      keypad.className = "dtmf-pad";
+      for (const digit of ["1", "2", "3", "4", "5", "6", "7", "8", "9", "*", "0", "#"]) {
+        const key = document.createElement("button");
+        key.type = "button";
+        key.className = "dtmf-key";
+        key.textContent = digit;
+        key.setAttribute("aria-label", `Send DTMF ${digit}`);
+        key.addEventListener("click", () => controlCall("send_dtmf", call.id, key, digit));
+        keypad.append(key);
+      }
+      row.append(keypad);
+    }
     elements.liveCallList.append(row);
   }
 }
 
-async function controlCall(action, callID, button) {
+async function controlCall(action, callID, button, dtmf = null) {
   button.disabled = true;
   try {
     await api("/api/calls/control", {
       method: "POST",
-      body: JSON.stringify({ action, callID }),
+      body: JSON.stringify({ action, callID, ...(dtmf ? { dtmf } : {}) }),
     });
     showToast(`${button.textContent} sent to the Mac.`);
-    window.setTimeout(refreshCalls, 350);
+    if (action === "send_dtmf") {
+      button.disabled = false;
+    } else {
+      window.setTimeout(refreshCalls, 350);
+    }
   } catch (error) {
     showToast(`Call control failed: ${error.message}`);
     button.disabled = false;

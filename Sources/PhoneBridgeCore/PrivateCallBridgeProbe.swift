@@ -52,7 +52,7 @@ public struct PrivateCallBridgeProbe: Sendable {
         "TUCall",
         [
           "status", "isConnected", "isOnHold", "isUplinkMuted", "isDownlinkMuted",
-          "disconnect", "answer", "hold", "unhold", "sendDTMFCharacter:",
+          "disconnect", "answer", "hold", "unhold", "playDTMFToneForKey:",
         ],
         []
       ),
