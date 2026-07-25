@@ -97,6 +97,7 @@ public enum PhoneBridgeError: Error, LocalizedError, Equatable, Sendable {
   case contactsDenied
   case contactsRestricted
   case callLaunchFailed(String)
+  case audioBridgeFailed(String)
   case invalidArguments(String)
   case unsupportedPlatform(String)
 
@@ -112,6 +113,8 @@ public enum PhoneBridgeError: Error, LocalizedError, Equatable, Sendable {
       "Contacts access is restricted on this Mac."
     case .callLaunchFailed(let reason):
       "The call could not be handed to macOS: \(reason)"
+    case .audioBridgeFailed(let reason):
+      "The call audio bridge failed: \(reason)"
     case .invalidArguments(let reason):
       reason
     case .unsupportedPlatform(let reason):

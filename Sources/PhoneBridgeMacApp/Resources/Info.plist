@@ -24,6 +24,8 @@
   <string>14.0</string>
   <key>NSContactsUsageDescription</key>
   <string>PhoneBridge searches your contacts locally so you can choose who to call.</string>
+  <key>NSAudioCaptureUsageDescription</key>
+  <string>PhoneBridge captures Phone or FaceTime audio so it can be sent to your authenticated browser.</string>
   <key>NSHighResolutionCapable</key>
   <true/>
   <key>NSMicrophoneUsageDescription</key>

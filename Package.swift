@@ -16,14 +16,27 @@ let package = Package(
     .target(
       name: "PhoneBridgeCore",
       dependencies: [
-        .product(name: "WebRTC", package: "WebRTC")
+        .product(name: "WebRTC", package: "WebRTC"),
+        "PhoneBridgeWebRTCShim",
       ],
       resources: [.process("Resources/Web")],
       linkerSettings: [
         .linkedFramework("AppKit"),
+        .linkedFramework("AudioToolbox"),
+        .linkedFramework("CoreAudio"),
         .linkedFramework("Contacts"),
         .linkedFramework("Network"),
         .linkedFramework("Security"),
+      ]
+    ),
+    .target(
+      name: "PhoneBridgeWebRTCShim",
+      dependencies: [
+        .product(name: "WebRTC", package: "WebRTC")
+      ],
+      publicHeadersPath: "include",
+      linkerSettings: [
+        .linkedFramework("AudioToolbox")
       ]
     ),
     .executableTarget(

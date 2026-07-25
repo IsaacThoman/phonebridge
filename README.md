@@ -4,8 +4,8 @@ Remote control and WebRTC audio bridge for cellular and FaceTime Audio calls on 
 
 > [!IMPORTANT]
 > PhoneBridge is under active development. Call launching uses supported macOS URL
-> handling today; call control, WebRTC media, and the experimental private bridge
-> are being implemented and validated on dedicated test hardware.
+> handling. Call control and media routing use unsupported Apple/Core Audio
+> integration points and are being validated on dedicated test hardware.
 
 ## Goals
 
@@ -49,6 +49,21 @@ open dist/PhoneBridge.app
 # Inspect private call-control classes and selectors without invoking them.
 swift run phonebridge bridge probe --json
 
+# List active cellular and FaceTime calls.
+swift run phonebridge call status --json
+
+# Control the selected call, or the first eligible call when --id is omitted.
+swift run phonebridge call control answer
+swift run phonebridge call control hold --id CALL_UUID
+swift run phonebridge call control resume --id CALL_UUID
+swift run phonebridge call control mute --id CALL_UUID
+swift run phonebridge call control unmute --id CALL_UUID
+swift run phonebridge call control hang_up --id CALL_UUID
+
+# Inspect installed audio devices and test a call-host process tap.
+swift run phonebridge audio devices --json
+swift run phonebridge audio tap --host facetime --seconds 5 --json
+
 # Exercise ICE/DTLS/SDP without requesting browser microphone permission.
 # This is a transport diagnostic, not a call-audio test.
 open "http://127.0.0.1:8742/?transport-only=1"
@@ -56,12 +71,37 @@ open "http://127.0.0.1:8742/?transport-only=1"
 
 ## Current media path
 
-The web client can now establish and tear down an authenticated, audio-only
-WebRTC session with the Mac. The current native endpoint uses WebRTC's default
-Core Audio device, so it validates browser-to-Mac transport but does not yet
-route Phone/FaceTime process audio. The next media layer replaces that device
-with a Core Audio process tap for outgoing call audio and a virtual input path
-for browser-to-call audio.
+The native WebRTC endpoint uses a custom 48 kHz stereo audio device:
+
+```text
+Phone.app / FaceTime.app output
+  → macOS Core Audio process tap
+  → native WebRTC audio input
+  → remote browser speaker
+
+Remote browser microphone
+  → native WebRTC audio output
+  → BlackHole 2ch or Rogue Amoeba Loopback virtual device
+  → Phone.app / FaceTime.app microphone selection
+```
+
+The Mac must have either BlackHole 2ch or Loopback installed, and that virtual
+device must be selected as the microphone in the Apple call host. Core Audio
+process capture requires macOS 14.2 or later and user approval for system-audio
+capture. WebRTC sessions expose an authenticated diagnostics endpoint at
+`GET /api/webrtc/status`; a TURN server is still required for clients whose
+network paths cannot form a direct ICE connection.
+
+## Call control
+
+`GET /api/calls` lists the calls known to Apple's call host. The web client polls
+this endpoint and exposes Answer, Decline/End, Hold/Resume, and Mute/Unmute.
+`POST /api/calls/control` invokes the corresponding operation.
+
+This adapter dynamically verifies every private Objective-C selector and its ABI
+before invocation. It runs on the call center's required main queue and fails
+closed when an expected operation is missing. TelephonyUtilities is not a public
+Apple SDK contract, so a macOS update can still change or remove this behavior.
 
 ## Safety model
 
@@ -72,8 +112,8 @@ for browser-to-call audio.
   before exposing PhoneBridge remotely.
 - The browser receives only minimal contact search results.
 - Every call request identifies the exact target and service.
-- Experimental injection refuses to run with unknown SIP state and reports
-  selector-level capabilities instead of assuming private APIs exist.
+- Private call control reports selector-level capabilities instead of assuming
+  private APIs exist; no SIP changes are made.
 - Call audio is never recorded unless a separate, explicit recording feature is
   requested and all legally required consent is obtained.
 
@@ -81,12 +121,13 @@ for browser-to-call audio.
 
 | macOS | Apple call host | PhoneBridge adapter |
 |---|---|---|
-| Sequoia 15 | FaceTime.app | URL launch, Accessibility, optional injected bridge |
-| Tahoe 26 | Phone.app | URL launch, Accessibility, optional injected bridge |
+| Sequoia 15 | FaceTime.app | URL launch, TelephonyUtilities control, process audio tap |
+| Tahoe 26 | Phone.app | URL launch, TelephonyUtilities control, process audio tap |
 
-The injected bridge is research-only. It requires reduced system protections,
-is not suitable for App Store distribution, and must never be required for basic
-call launching or contact search.
+The private call-control adapter is research-only and is not suitable for App
+Store distribution. PhoneBridge does not disable SIP or alter other system
+protections, and private APIs are never required for contact search or outgoing
+call launching.
 
 ## Development
 

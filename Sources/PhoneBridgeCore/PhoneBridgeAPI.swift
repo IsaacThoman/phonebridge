@@ -24,6 +24,7 @@ public actor PhoneBridgeAPI {
   private let version: String
   private let contacts: any ContactDirectory
   private let launcher: any CallLaunching
+  private let callController: any CallControlling
   private let webRTC: any WebRTCSignaling
 
   public init(
@@ -31,12 +32,14 @@ public actor PhoneBridgeAPI {
     version: String,
     contacts: any ContactDirectory = MacContactDirectory(),
     launcher: any CallLaunching = MacCallLauncher(),
+    callController: any CallControlling = PrivateCallController(),
     webRTC: any WebRTCSignaling = WebRTCSessionManager()
   ) {
     self.token = token
     self.version = version
     self.contacts = contacts
     self.launcher = launcher
+    self.callController = callController
     self.webRTC = webRTC
   }
 
@@ -81,6 +84,17 @@ public actor PhoneBridgeAPI {
       if request.method == "GET", request.path == "/api/bridge/probe" {
         return try .json(PrivateCallBridgeProbe().inspect())
       }
+      if request.method == "GET", request.path == "/api/calls" {
+        return try await .json(callController.snapshot())
+      }
+      if request.method == "POST", request.path == "/api/calls/control" {
+        let decoded = try JSONDecoder().decode(CallControlRequest.self, from: request.body)
+        return try await .json(
+          callController.perform(decoded),
+          status: 202,
+          reason: "Accepted"
+        )
+      }
       if request.method == "POST", request.path == "/api/webrtc/sessions" {
         let offer = try JSONDecoder().decode(WebRTCOffer.self, from: request.body)
         return try await .json(
@@ -88,6 +102,9 @@ public actor PhoneBridgeAPI {
           status: 201,
           reason: "Created"
         )
+      }
+      if request.method == "GET", request.path == "/api/webrtc/status" {
+        return try await .json(webRTC.status())
       }
       if request.method == "DELETE", request.path.hasPrefix("/api/webrtc/sessions/") {
         let sessionID = String(request.path.dropFirst("/api/webrtc/sessions/".count))
@@ -145,13 +162,24 @@ public actor PhoneBridgeAPI {
   private func capabilities() -> ServerCapabilities {
     let version = ProcessInfo.processInfo.operatingSystemVersion
     let callHost = version.majorVersion >= 26 ? "Phone.app" : "FaceTime.app"
+    let probe = PrivateCallBridgeProbe().inspect()
+    let callCenter = probe.classes.first { $0.name == "TUCallCenter" }
+    let requiredControlSelectors = [
+      "currentCalls",
+      "incomingCalls",
+      "answerCall:",
+      "disconnectCall:",
+    ]
+    let callControl = requiredControlSelectors.allSatisfy { name in
+      callCenter?.selectors.contains { $0.name == name && $0.available } == true
+    }
     return ServerCapabilities(
       version: self.version,
       callHost: callHost,
       services: CallService.allCases,
       contacts: true,
       callLaunch: true,
-      callControl: false,
+      callControl: callControl,
       webRTC: true,
       injectedBridge: false
     )

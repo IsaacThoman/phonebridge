@@ -240,6 +240,82 @@ h1 {
   border-radius: 20px;
 }
 
+.live-call-panel {
+  margin-bottom: 28px;
+  padding: 28px 30px;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+}
+
+.live-call-list {
+  display: grid;
+  gap: 10px;
+}
+
+.live-call {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 18px;
+  align-items: center;
+  padding: 18px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+
+.live-call.incoming {
+  border-color: rgba(217, 255, 67, 0.42);
+  box-shadow: 0 0 0 3px rgba(217, 255, 67, 0.05);
+}
+
+.live-call h3 {
+  margin: 0 0 5px;
+  font-size: 17px;
+}
+
+.live-call p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.call-control-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.control-button {
+  min-height: 38px;
+  padding: 0 13px;
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 800;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+}
+
+.control-button.answer {
+  color: var(--acid-ink);
+  background: var(--acid);
+  border-color: transparent;
+}
+
+.control-button.hang-up {
+  color: white;
+  background: rgba(255, 111, 116, 0.22);
+  border-color: rgba(255, 111, 116, 0.42);
+}
+
+.no-live-calls {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .media-panel h2 {
   margin-bottom: 8px;
   font-size: clamp(23px, 3vw, 32px);
@@ -584,6 +660,18 @@ dialog input:focus {
 
   .media-button {
     width: 100%;
+  }
+
+  .live-call {
+    grid-template-columns: 1fr;
+  }
+
+  .call-control-actions {
+    justify-content: stretch;
+  }
+
+  .control-button {
+    flex: 1;
   }
 
   .contact-grid {

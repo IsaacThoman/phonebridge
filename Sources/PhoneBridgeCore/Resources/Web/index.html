@@ -47,6 +47,17 @@
         </form>
       </section>
 
+      <section class="live-call-panel" id="liveCallPanel" aria-labelledby="liveCallTitle" hidden>
+        <div class="section-heading">
+          <div>
+            <p class="section-kicker">Call control</p>
+            <h2 id="liveCallTitle">Calls on this Mac</h2>
+          </div>
+          <span class="host-badge" id="callControlStatus">Watching…</span>
+        </div>
+        <div class="live-call-list" id="liveCallList" aria-live="polite"></div>
+      </section>
+
       <section class="media-panel" aria-labelledby="mediaTitle">
         <div>
           <p class="section-kicker">Live audio</p>

@@ -4,6 +4,8 @@ const state = {
   peerConnection: null,
   localStream: null,
   mediaSessionID: null,
+  diagnosticAudio: null,
+  callPollTimer: null,
 };
 
 const elements = {
@@ -27,6 +29,9 @@ const elements = {
   mediaButton: document.querySelector("#mediaButton"),
   mediaStatus: document.querySelector("#mediaStatus"),
   remoteAudio: document.querySelector("#remoteAudio"),
+  liveCallPanel: document.querySelector("#liveCallPanel"),
+  liveCallList: document.querySelector("#liveCallList"),
+  callControlStatus: document.querySelector("#callControlStatus"),
 };
 
 async function api(path, options = {}) {
@@ -46,6 +51,11 @@ async function api(path, options = {}) {
 }
 
 function setPaired(paired, label = "") {
+  if (!paired) {
+    window.clearInterval(state.callPollTimer);
+    state.callPollTimer = null;
+    elements.liveCallPanel.hidden = true;
+  }
   elements.connection.classList.toggle("online", paired);
   elements.connection.querySelector("span:last-child").textContent = paired
     ? label || "Connected to Mac"
@@ -67,12 +77,98 @@ async function validatePairing() {
     elements.hostBadge.textContent = `${capabilities.callHost} · ${capabilities.version}`;
     elements.empty.querySelector("p").textContent =
       "Search by name, number, or email. Contact data never leaves your Mac.";
+    if (capabilities.callControl) {
+      elements.liveCallPanel.hidden = false;
+      await refreshCalls();
+      startCallPolling();
+    }
     elements.searchInput.focus();
   } catch (error) {
     state.token = "";
     localStorage.removeItem("phonebridge.token");
     setPaired(false);
     elements.pairDialog.showModal();
+  }
+}
+
+function startCallPolling() {
+  window.clearInterval(state.callPollTimer);
+  state.callPollTimer = window.setInterval(refreshCalls, 2000);
+}
+
+async function refreshCalls() {
+  if (!state.token || elements.liveCallPanel.hidden) return;
+  try {
+    const snapshot = await api("/api/calls");
+    elements.callControlStatus.textContent = snapshot.calls.length
+      ? `${snapshot.calls.length} active`
+      : "Ready";
+    renderLiveCalls(snapshot.calls);
+  } catch (error) {
+    elements.callControlStatus.textContent = "Unavailable";
+  }
+}
+
+function renderLiveCalls(calls) {
+  elements.liveCallList.replaceChildren();
+  if (!calls.length) {
+    const empty = document.createElement("p");
+    empty.className = "no-live-calls";
+    empty.textContent = "No active calls. Incoming phone and FaceTime Audio calls appear here.";
+    elements.liveCallList.append(empty);
+    return;
+  }
+
+  for (const call of calls) {
+    const row = document.createElement("article");
+    row.className = `live-call${call.canAnswer ? " incoming" : ""}`;
+    const details = document.createElement("div");
+    const name = document.createElement("h3");
+    name.textContent = call.displayName;
+    const status = document.createElement("p");
+    status.textContent = call.canAnswer
+      ? "Incoming call"
+      : call.onHold
+        ? "On hold"
+        : call.muted
+          ? "Connected · muted"
+          : "Connected";
+    details.append(name, status);
+
+    const actions = document.createElement("div");
+    actions.className = "call-control-actions";
+    const controls = call.canAnswer
+      ? [["answer", "Answer"], ["hang_up", "Decline"]]
+      : [
+          [call.onHold ? "resume" : "hold", call.onHold ? "Resume" : "Hold"],
+          [call.muted ? "unmute" : "mute", call.muted ? "Unmute" : "Mute"],
+          ["hang_up", "End"],
+        ];
+    for (const [action, label] of controls) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = `control-button ${action.replace("_", "-")}`;
+      button.textContent = label;
+      button.addEventListener("click", () => controlCall(action, call.id, button));
+      actions.append(button);
+    }
+    row.append(details, actions);
+    elements.liveCallList.append(row);
+  }
+}
+
+async function controlCall(action, callID, button) {
+  button.disabled = true;
+  try {
+    await api("/api/calls/control", {
+      method: "POST",
+      body: JSON.stringify({ action, callID }),
+    });
+    showToast(`${button.textContent} sent to the Mac.`);
+    window.setTimeout(refreshCalls, 350);
+  } catch (error) {
+    showToast(`Call control failed: ${error.message}`);
+    button.disabled = false;
   }
 }
 
@@ -224,10 +320,23 @@ elements.mediaButton.addEventListener("click", async () => {
     ? "Starting transport-only diagnostic…"
     : "Requesting microphone access…";
   try {
-    const peer = new RTCPeerConnection();
+    const iceServerURL = new URLSearchParams(window.location.search).get("ice-server");
+    const validIceServer =
+      iceServerURL && /^(stun|stuns|turn|turns):/i.test(iceServerURL) ? iceServerURL : null;
+    const peer = new RTCPeerConnection({
+      iceServers: validIceServer ? [{ urls: validIceServer }] : [],
+    });
     state.peerConnection = peer;
     if (transportOnly) {
-      peer.addTransceiver("audio", { direction: "sendrecv" });
+      const context = new AudioContext();
+      const oscillator = new OscillatorNode(context, { frequency: 440 });
+      const gain = new GainNode(context, { gain: 0.04 });
+      const destination = context.createMediaStreamDestination();
+      oscillator.connect(gain).connect(destination);
+      oscillator.start();
+      await context.resume();
+      state.diagnosticAudio = { context, oscillator };
+      peer.addTrack(destination.stream.getAudioTracks()[0], destination.stream);
     } else {
       const stream = await withTimeout(
         navigator.mediaDevices.getUserMedia({
@@ -248,8 +357,11 @@ elements.mediaButton.addEventListener("click", async () => {
       elements.remoteAudio.srcObject = event.streams[0] || new MediaStream([event.track]);
     });
     peer.addEventListener("connectionstatechange", () => {
-      elements.mediaStatus.textContent = `WebRTC · ${peer.connectionState}`;
+      updateMediaConnectionStatus(peer, transportOnly);
       if (["failed", "closed"].includes(peer.connectionState)) disconnectMedia();
+    });
+    peer.addEventListener("iceconnectionstatechange", () => {
+      updateMediaConnectionStatus(peer, transportOnly);
     });
 
     const offer = await peer.createOffer();
@@ -264,6 +376,7 @@ elements.mediaButton.addEventListener("click", async () => {
     });
     state.mediaSessionID = answer.sessionID;
     await peer.setRemoteDescription({ type: answer.type, sdp: answer.sdp });
+    await waitForPeerConnection(peer, 20000);
     elements.mediaButton.textContent = "Disconnect audio";
     elements.mediaButton.classList.add("connected");
     elements.mediaButton.disabled = false;
@@ -277,6 +390,32 @@ elements.mediaButton.addEventListener("click", async () => {
   }
 });
 
+async function waitForPeerConnection(peer, timeoutMilliseconds) {
+  if (["connected", "completed"].includes(peer.iceConnectionState)) return;
+  await withTimeout(
+    new Promise((resolve, reject) => {
+      const cleanup = () => {
+        peer.removeEventListener("iceconnectionstatechange", inspect);
+        peer.removeEventListener("connectionstatechange", inspect);
+      };
+      const inspect = () => {
+        if (["connected", "completed"].includes(peer.iceConnectionState)) {
+          cleanup();
+          resolve();
+        } else if (["failed", "closed"].includes(peer.iceConnectionState)) {
+          cleanup();
+          reject(new Error(`WebRTC ICE ${peer.iceConnectionState}.`));
+        }
+      };
+      peer.addEventListener("iceconnectionstatechange", inspect);
+      peer.addEventListener("connectionstatechange", inspect);
+      inspect();
+    }),
+    timeoutMilliseconds,
+    "WebRTC could not establish an audio path. A TURN server may be required.",
+  );
+}
+
 async function withTimeout(promise, timeoutMilliseconds, message) {
   let timer;
   try {
@@ -289,6 +428,13 @@ async function withTimeout(promise, timeoutMilliseconds, message) {
   } finally {
     window.clearTimeout(timer);
   }
+}
+
+function updateMediaConnectionStatus(peer, transportOnly) {
+  const connected = ["connected", "completed"].includes(peer.iceConnectionState);
+  const status = connected ? "connected" : peer.connectionState;
+  elements.mediaStatus.textContent =
+    `WebRTC · ${status}${transportOnly ? " · transport-only" : ""}`;
 }
 
 async function waitForIceGathering(peer) {
@@ -315,6 +461,9 @@ async function disconnectMedia(notifyServer = true) {
   state.peerConnection = null;
   for (const track of state.localStream?.getTracks() || []) track.stop();
   state.localStream = null;
+  state.diagnosticAudio?.oscillator.stop();
+  state.diagnosticAudio?.context.close();
+  state.diagnosticAudio = null;
   elements.remoteAudio.srcObject = null;
   elements.mediaButton.textContent = "Connect audio";
   elements.mediaButton.classList.remove("connected");
@@ -327,5 +476,14 @@ async function disconnectMedia(notifyServer = true) {
     }).catch(() => {});
   }
 }
+
+window.addEventListener("pagehide", () => {
+  if (!state.mediaSessionID) return;
+  fetch(`/api/webrtc/sessions/${encodeURIComponent(state.mediaSessionID)}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${state.token}` },
+    keepalive: true,
+  }).catch(() => {});
+});
 
 validatePairing();

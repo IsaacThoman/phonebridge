@@ -43,6 +43,57 @@ private actor StubWebRTC: WebRTCSignaling {
   }
 
   func close(sessionID: String) async {}
+
+  func status() async -> WebRTCMediaStatus {
+    WebRTCMediaStatus(
+      callAudioBundleIdentifier: "com.apple.FaceTime",
+      callAudioTapActive: true,
+      callAudioTapStarting: false,
+      callAudioTapError: nil,
+      callAudioFrameCount: 480,
+      callAudioPeak: 0.25,
+      virtualMicrophoneDevice: "BlackHole 2ch",
+      virtualMicrophoneError: nil,
+      nativeConnectionState: "connected",
+      nativeICEConnectionState: "connected",
+      localCandidateCount: 1,
+      localCandidates: ["a=candidate:test"],
+      remoteCandidateCount: 1,
+      remoteCandidates: ["a=candidate:test"],
+      browserAudioFrameCount: 480,
+      browserAudioPeak: 0.5
+    )
+  }
+}
+
+private actor StubCallController: CallControlling {
+  func snapshot() async throws -> CallControlSnapshot {
+    CallControlSnapshot(
+      available: true,
+      calls: [
+        ActiveCallSummary(
+          id: "test-call",
+          displayName: "Rick Astley",
+          destination: nil,
+          status: 4,
+          incoming: true,
+          outgoing: false,
+          video: false,
+          canAnswer: true,
+          onHold: false,
+          muted: false
+        )
+      ]
+    )
+  }
+
+  func perform(_ request: CallControlRequest) async throws -> CallControlReceipt {
+    CallControlReceipt(
+      accepted: true,
+      action: request.action,
+      callID: request.callID ?? "test-call"
+    )
+  }
 }
 
 @Suite("PhoneBridge HTTP API")
@@ -52,6 +103,7 @@ struct PhoneBridgeAPITests {
     version: "test",
     contacts: StubContacts(),
     launcher: StubLauncher(),
+    callController: StubCallController(),
     webRTC: StubWebRTC()
   )
 
@@ -101,6 +153,34 @@ struct PhoneBridgeAPITests {
     #expect(response.status == 202)
     let receipt = try JSONDecoder().decode(CallLaunchReceipt.self, from: response.body)
     #expect(receipt.url == "facetime-audio:person@example.com")
+  }
+
+  @Test("Incoming calls can be listed and answered")
+  func incomingCallControl() async throws {
+    let statusResponse = await api.handle(
+      HTTPRequest(
+        method: "GET",
+        target: "/api/calls",
+        headers: ["authorization": "Bearer correct-token"],
+        body: Data()
+      )
+    )
+    #expect(statusResponse.status == 200)
+    let snapshot = try JSONDecoder().decode(CallControlSnapshot.self, from: statusResponse.body)
+    #expect(snapshot.calls.first?.canAnswer == true)
+
+    let request = CallControlRequest(action: .answer, callID: "test-call")
+    let controlResponse = await api.handle(
+      HTTPRequest(
+        method: "POST",
+        target: "/api/calls/control",
+        headers: ["authorization": "Bearer correct-token"],
+        body: try JSONEncoder().encode(request)
+      )
+    )
+    #expect(controlResponse.status == 202)
+    let receipt = try JSONDecoder().decode(CallControlReceipt.self, from: controlResponse.body)
+    #expect(receipt.action == .answer)
   }
 
   @Test("Private bridge probe is authenticated and structured")
