@@ -149,14 +149,15 @@ public final class VirtualMicrophoneOutput: @unchecked Sendable {
 
   public func stop() {
     lock.lock()
-    defer { lock.unlock() }
-    if let audioQueue {
-      AudioQueueStop(audioQueue, true)
-      AudioQueueDispose(audioQueue, true)
-    }
+    let queue = audioQueue
     audioQueue = nil
     device = nil
     pcmBuffer.removeAll(keepingCapacity: false)
+    lock.unlock()
+    if let queue {
+      AudioQueueStop(queue, true)
+      AudioQueueDispose(queue, true)
+    }
   }
 
   deinit {
@@ -165,6 +166,10 @@ public final class VirtualMicrophoneOutput: @unchecked Sendable {
 
   fileprivate func fillAndEnqueue(queue: AudioQueueRef, buffer: AudioQueueBufferRef) {
     lock.lock()
+    guard audioQueue == queue else {
+      lock.unlock()
+      return
+    }
     let capacity = Int(buffer.pointee.mAudioDataBytesCapacity)
     let byteCount = min(capacity, pcmBuffer.count)
     memset(buffer.pointee.mAudioData, 0, capacity)
