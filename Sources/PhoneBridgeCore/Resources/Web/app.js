@@ -278,14 +278,20 @@ function renderContacts(contacts, query) {
         (left, right) =>
           (left === "facetime_audio" ? 0 : 1) - (right === "facetime_audio" ? 0 : 1),
       );
+      const hasFaceTimeOption = services.includes("facetime_audio");
       for (const [index, service] of services.entries()) {
         const button = document.createElement("button");
         button.type = "button";
         button.className = `call-button${index === 0 ? " preferred" : ""}`;
-        button.textContent = service === "cellular" ? "Phone" : "FaceTime Audio";
+        button.textContent =
+          service === "cellular"
+            ? hasFaceTimeOption
+              ? "Phone fallback"
+              : "Phone"
+            : "FaceTime Audio";
         if (index === 0 && service === "facetime_audio") {
-          button.setAttribute("aria-label", "FaceTime Audio (preferred)");
-          button.title = "Preferred when available";
+          button.setAttribute("aria-label", "Try FaceTime Audio first");
+          button.title = "FaceTime availability is confirmed only when the Mac starts the call";
         }
         button.addEventListener("click", () => {
           prepareCall(contact.displayName, endpoint.value, service);

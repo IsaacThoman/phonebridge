@@ -79,6 +79,11 @@ swift run phonebridge audio tap --host facetime --seconds 5 --json
 open "http://127.0.0.1:8742/?transport-only=1"
 ```
 
+Contacts supplies phone numbers and email addresses, but it does not report
+whether a particular endpoint is currently registered for FaceTime. The web
+client therefore offers FaceTime Audio first and labels cellular as the fallback;
+FaceTime itself remains the source of truth when the call starts.
+
 ## Current media path
 
 The native WebRTC endpoint uses a custom 48 kHz stereo audio device:
