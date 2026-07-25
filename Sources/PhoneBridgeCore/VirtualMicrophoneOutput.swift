@@ -10,7 +10,7 @@ public struct AudioOutputDevice: Codable, Sendable, Equatable {
 
 public final class VirtualMicrophoneOutput: @unchecked Sendable {
   private let lock = NSLock()
-  private var audioQueue: AudioQueueRef?
+  private var audioUnit: AudioUnit?
   private var pcmBuffer = Data()
   private(set) public var device: AudioOutputDevice?
 
@@ -56,8 +56,11 @@ public final class VirtualMicrophoneOutput: @unchecked Sendable {
     preferredDeviceNames: [String] = ["BlackHole 2ch", "Loopback Audio 2", "Loopback Audio"]
   ) throws -> AudioOutputDevice {
     lock.lock()
-    defer { lock.unlock() }
-    if let device, audioQueue != nil { return device }
+    if let device, audioUnit != nil {
+      lock.unlock()
+      return device
+    }
+    lock.unlock()
 
     let availableDevices = try Self.devices()
     guard
@@ -72,66 +75,120 @@ public final class VirtualMicrophoneOutput: @unchecked Sendable {
       )
     }
 
-    var format = AudioStreamBasicDescription(
-      mSampleRate: 48_000,
-      mFormatID: kAudioFormatLinearPCM,
-      mFormatFlags: kAudioFormatFlagIsSignedInteger | kAudioFormatFlagIsPacked,
-      mBytesPerPacket: 4,
-      mFramesPerPacket: 1,
-      mBytesPerFrame: 4,
-      mChannelsPerFrame: 2,
-      mBitsPerChannel: 16,
-      mReserved: 0
+    var componentDescription = AudioComponentDescription(
+      componentType: kAudioUnitType_Output,
+      componentSubType: kAudioUnitSubType_HALOutput,
+      componentManufacturer: kAudioUnitManufacturer_Apple,
+      componentFlags: 0,
+      componentFlagsMask: 0
     )
-    var queue: AudioQueueRef?
-    let context = Unmanaged.passUnretained(self).toOpaque()
-    try Self.check(
-      AudioQueueNewOutput(
-        &format,
-        virtualMicrophoneOutputCallback,
-        context,
-        nil,
-        nil,
-        0,
-        &queue
-      ),
-      operation: "create virtual microphone output queue"
-    )
-    guard let queue else {
-      throw PhoneBridgeError.audioBridgeFailed("Core Audio returned no output queue.")
+    guard let component = AudioComponentFindNext(nil, &componentDescription) else {
+      throw PhoneBridgeError.audioBridgeFailed("Core Audio HAL output component is unavailable.")
     }
-    var unmanagedUID = Unmanaged.passUnretained(selected.uid as CFString)
+    var newAudioUnit: AudioUnit?
+    try Self.check(
+      AudioComponentInstanceNew(component, &newAudioUnit),
+      operation: "create virtual microphone HAL output"
+    )
+    guard let newAudioUnit else {
+      throw PhoneBridgeError.audioBridgeFailed("Core Audio returned no virtual microphone HAL output.")
+    }
     do {
+      var enabled: UInt32 = 1
       try Self.check(
-        AudioQueueSetProperty(
-          queue,
-          kAudioQueueProperty_CurrentDevice,
-          &unmanagedUID,
-          UInt32(MemoryLayout<Unmanaged<CFString>>.size)
+        AudioUnitSetProperty(
+          newAudioUnit,
+          kAudioOutputUnitProperty_EnableIO,
+          kAudioUnitScope_Output,
+          0,
+          &enabled,
+          UInt32(MemoryLayout<UInt32>.size)
         ),
-        operation: "select virtual microphone output"
+        operation: "enable virtual microphone output"
       )
-      for _ in 0..<3 {
-        var buffer: AudioQueueBufferRef?
-        try Self.check(
-          AudioQueueAllocateBuffer(queue, 1_920, &buffer),
-          operation: "allocate virtual microphone buffer"
-        )
-        guard let buffer else { continue }
-        let capacity = Int(buffer.pointee.mAudioDataBytesCapacity)
-        memset(buffer.pointee.mAudioData, 0, capacity)
-        buffer.pointee.mAudioDataByteSize = UInt32(capacity)
-        AudioQueueEnqueueBuffer(queue, buffer, 0, nil)
-      }
+      var disabled: UInt32 = 0
       try Self.check(
-        AudioQueueStart(queue, nil),
-        operation: "start virtual microphone output"
+        AudioUnitSetProperty(
+          newAudioUnit,
+          kAudioOutputUnitProperty_EnableIO,
+          kAudioUnitScope_Input,
+          1,
+          &disabled,
+          UInt32(MemoryLayout<UInt32>.size)
+        ),
+        operation: "disable virtual microphone input"
       )
-      audioQueue = queue
+      var selectedDeviceID = AudioDeviceID(selected.objectID)
+      try Self.check(
+        AudioUnitSetProperty(
+          newAudioUnit,
+          kAudioOutputUnitProperty_CurrentDevice,
+          kAudioUnitScope_Global,
+          0,
+          &selectedDeviceID,
+          UInt32(MemoryLayout<AudioDeviceID>.size)
+        ),
+        operation: "select virtual microphone device"
+      )
+      var format = AudioStreamBasicDescription(
+        mSampleRate: 48_000,
+        mFormatID: kAudioFormatLinearPCM,
+        mFormatFlags: kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked,
+        mBytesPerPacket: 2 * UInt32(MemoryLayout<Float>.size),
+        mFramesPerPacket: 1,
+        mBytesPerFrame: 2 * UInt32(MemoryLayout<Float>.size),
+        mChannelsPerFrame: 2,
+        mBitsPerChannel: 32,
+        mReserved: 0
+      )
+      try Self.check(
+        AudioUnitSetProperty(
+          newAudioUnit,
+          kAudioUnitProperty_StreamFormat,
+          kAudioUnitScope_Input,
+          0,
+          &format,
+          UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
+        ),
+        operation: "configure virtual microphone format"
+      )
+      var callback = AURenderCallbackStruct(
+        inputProc: virtualMicrophoneRenderCallback,
+        inputProcRefCon: Unmanaged.passUnretained(self).toOpaque()
+      )
+      try Self.check(
+        AudioUnitSetProperty(
+          newAudioUnit,
+          kAudioUnitProperty_SetRenderCallback,
+          kAudioUnitScope_Input,
+          0,
+          &callback,
+          UInt32(MemoryLayout<AURenderCallbackStruct>.size)
+        ),
+        operation: "configure virtual microphone callback"
+      )
+      try Self.check(
+        AudioUnitInitialize(newAudioUnit),
+        operation: "initialize virtual microphone output"
+      )
+      lock.lock()
+      audioUnit = newAudioUnit
       device = selected
+      lock.unlock()
+      try Self.check(
+        AudioOutputUnitStart(newAudioUnit),
+        operation: "start virtual microphone device"
+      )
       return selected
     } catch {
-      AudioQueueDispose(queue, true)
+      lock.lock()
+      if audioUnit == newAudioUnit {
+        audioUnit = nil
+        device = nil
+      }
+      lock.unlock()
+      _ = AudioUnitUninitialize(newAudioUnit)
+      _ = AudioComponentInstanceDispose(newAudioUnit)
       throw error
     }
   }
@@ -149,14 +206,15 @@ public final class VirtualMicrophoneOutput: @unchecked Sendable {
 
   public func stop() {
     lock.lock()
-    let queue = audioQueue
-    audioQueue = nil
+    let currentAudioUnit = audioUnit
+    audioUnit = nil
     device = nil
     pcmBuffer.removeAll(keepingCapacity: false)
     lock.unlock()
-    if let queue {
-      AudioQueueStop(queue, true)
-      AudioQueueDispose(queue, true)
+    if let currentAudioUnit {
+      _ = AudioOutputUnitStop(currentAudioUnit)
+      _ = AudioUnitUninitialize(currentAudioUnit)
+      _ = AudioComponentInstanceDispose(currentAudioUnit)
     }
   }
 
@@ -164,25 +222,55 @@ public final class VirtualMicrophoneOutput: @unchecked Sendable {
     stop()
   }
 
-  fileprivate func fillAndEnqueue(queue: AudioQueueRef, buffer: AudioQueueBufferRef) {
+  fileprivate func fill(outputData: UnsafeMutablePointer<AudioBufferList>) {
+    let buffers = UnsafeMutableAudioBufferListPointer(outputData)
+    guard let firstBuffer = buffers.first else { return }
+    let firstChannelCount = max(1, Int(firstBuffer.mNumberChannels))
+    let frameCount =
+      buffers.count == 1
+      ? Int(firstBuffer.mDataByteSize) / (MemoryLayout<Float>.size * firstChannelCount)
+      : Int(firstBuffer.mDataByteSize) / MemoryLayout<Float>.size
+    guard frameCount > 0 else { return }
+
     lock.lock()
-    guard audioQueue == queue else {
+    guard audioUnit != nil else {
       lock.unlock()
       return
     }
-    let capacity = Int(buffer.pointee.mAudioDataBytesCapacity)
-    let byteCount = min(capacity, pcmBuffer.count)
-    memset(buffer.pointee.mAudioData, 0, capacity)
-    if byteCount > 0 {
-      pcmBuffer.copyBytes(
-        to: buffer.pointee.mAudioData.assumingMemoryBound(to: UInt8.self),
-        count: byteCount
-      )
-      pcmBuffer.removeFirst(byteCount)
-    }
-    buffer.pointee.mAudioDataByteSize = UInt32(capacity)
+    let availableFrames = min(frameCount, pcmBuffer.count / (2 * MemoryLayout<Int16>.size))
+    let source = Data(pcmBuffer.prefix(availableFrames * 2 * MemoryLayout<Int16>.size))
+    pcmBuffer.removeFirst(source.count)
     lock.unlock()
-    AudioQueueEnqueueBuffer(queue, buffer, 0, nil)
+
+    for buffer in buffers {
+      if let data = buffer.mData {
+        memset(data, 0, Int(buffer.mDataByteSize))
+      }
+    }
+    guard availableFrames > 0 else { return }
+    source.withUnsafeBytes { rawBuffer in
+      let samples = rawBuffer.bindMemory(to: Int16.self)
+      if buffers.count == 1, let data = buffers[0].mData {
+        let channels = max(1, Int(buffers[0].mNumberChannels))
+        let output = data.assumingMemoryBound(to: Float.self)
+        for frame in 0..<availableFrames {
+          for channel in 0..<channels {
+            let sourceChannel = min(channel, 1)
+            output[frame * channels + channel] =
+              Float(samples[frame * 2 + sourceChannel]) / Float(Int16.max)
+          }
+        }
+      } else {
+        for (channel, buffer) in buffers.enumerated() {
+          guard let data = buffer.mData else { continue }
+          let output = data.assumingMemoryBound(to: Float.self)
+          let sourceChannel = min(channel, 1)
+          for frame in 0..<availableFrames {
+            output[frame] = Float(samples[frame * 2 + sourceChannel]) / Float(Int16.max)
+          }
+        }
+      }
+    }
   }
 
   private static func readString(
@@ -213,9 +301,10 @@ public final class VirtualMicrophoneOutput: @unchecked Sendable {
   }
 }
 
-private let virtualMicrophoneOutputCallback: AudioQueueOutputCallback = {
-  userData, queue, buffer in
-  guard let userData else { return }
-  let output = Unmanaged<VirtualMicrophoneOutput>.fromOpaque(userData).takeUnretainedValue()
-  output.fillAndEnqueue(queue: queue, buffer: buffer)
+private let virtualMicrophoneRenderCallback: AURenderCallback = {
+  refCon, _, _, _, _, outputData in
+  guard let outputData else { return noErr }
+  let output = Unmanaged<VirtualMicrophoneOutput>.fromOpaque(refCon).takeUnretainedValue()
+  output.fill(outputData: outputData)
+  return noErr
 }

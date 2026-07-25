@@ -61,7 +61,6 @@ public actor WebRTCSessionManager: WebRTCSignaling {
   private var callAudioTapStarting = false
   private var callAudioTapRetryTask: Task<Void, Never>?
   private var callAudioTapError: String?
-  private var virtualMicrophoneStartTask: Task<Void, Never>?
   private var virtualMicrophoneError: String?
   private let callAudioBundleIdentifier: String
 
@@ -93,9 +92,14 @@ public actor WebRTCSessionManager: WebRTCSignaling {
     sessions.removeAll()
     callAudioTapRetryTask?.cancel()
     callAudioTapRetryTask = nil
-    virtualMicrophoneStartTask?.cancel()
-    virtualMicrophoneStartTask = nil
     metrics.reset()
+    do {
+      _ = try virtualMicrophone.start()
+      virtualMicrophoneError = nil
+    } catch {
+      virtualMicrophoneError =
+        (error as? LocalizedError)?.errorDescription ?? String(describing: error)
+    }
     beginCallAudioTapIfNeeded()
     let sessionID = UUID().uuidString.lowercased()
     let session = try WebRTCPeerSession(factory: factory)
@@ -104,12 +108,6 @@ public actor WebRTCSessionManager: WebRTCSignaling {
       sessions[sessionID] = session
       if callAudioTap == nil, !callAudioTapStarting {
         scheduleCallAudioTapRetry()
-      }
-      virtualMicrophoneStartTask = Task {
-        try? await Task.sleep(for: .seconds(3))
-        guard !Task.isCancelled else { return }
-        ensureVirtualMicrophone()
-        virtualMicrophoneStartTask = nil
       }
       return WebRTCAnswer(sessionID: sessionID, sdp: sdp)
     } catch {
@@ -201,23 +199,10 @@ public actor WebRTCSessionManager: WebRTCSignaling {
     beginCallAudioTapIfNeeded()
   }
 
-  private func ensureVirtualMicrophone() {
-    guard !sessions.isEmpty, virtualMicrophone.device == nil else { return }
-    do {
-      _ = try virtualMicrophone.start()
-      virtualMicrophoneError = nil
-    } catch {
-      virtualMicrophoneError =
-        (error as? LocalizedError)?.errorDescription ?? String(describing: error)
-    }
-  }
-
   private func stopMediaBridgeIfIdle() {
     guard sessions.isEmpty else { return }
     callAudioTapRetryTask?.cancel()
     callAudioTapRetryTask = nil
-    virtualMicrophoneStartTask?.cancel()
-    virtualMicrophoneStartTask = nil
     callAudioTap?.stop()
     callAudioTap = nil
     callAudioTapStarting = false
@@ -437,7 +422,21 @@ private final class WebRTCPeerSession: NSObject, @unchecked Sendable {
       throw PhoneBridgeError.unsupportedPlatform("Could not create a WebRTC peer connection.")
     }
     self.peerConnection = peerConnection
-    let source = factory.audioSource(with: nil)
+    // This track is captured call output, not a physical microphone. WebRTC's
+    // default audio processing can treat the remote caller as echo and heavily
+    // attenuate or distort it because browser playout is fed back into the Mac
+    // call host through the virtual microphone.
+    let callAudioConstraints = RTCMediaConstraints(
+      mandatoryConstraints: [
+        "googAutoGainControl": "false",
+        "googEchoCancellation": "false",
+        "googHighpassFilter": "false",
+        "googNoiseSuppression": "false",
+        "googTypingNoiseDetection": "false",
+      ],
+      optionalConstraints: nil
+    )
+    let source = factory.audioSource(with: callAudioConstraints)
     audioTrack = factory.audioTrack(with: source, trackId: "phonebridge-audio")
     super.init()
     peerConnection.delegate = self

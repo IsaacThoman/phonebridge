@@ -6,6 +6,7 @@ static const double PBSampleRate = 48000.0;
 static const NSInteger PBChannelCount = 2;
 static const UInt32 PBFramesPerTick = 480;
 static const NSTimeInterval PBTickDuration = 0.01;
+static const NSTimeInterval PBMaximumRecordedBufferDuration = 0.2;
 
 void PBResolveFaceTimeAudioAvailability(
     NSString *destination,
@@ -81,8 +82,10 @@ void PBResolveFaceTimeAudioAvailability(
 
 @interface PBRTCAudioDevice ()
 @property(nonatomic, strong, nullable) id<RTCAudioDeviceDelegate> delegate;
-@property(nonatomic, strong) dispatch_queue_t audioQueue;
-@property(nonatomic, strong, nullable) dispatch_source_t timer;
+@property(nonatomic, strong) dispatch_queue_t recordingQueue;
+@property(nonatomic, strong) dispatch_queue_t playoutQueue;
+@property(nonatomic, strong, nullable) dispatch_source_t recordingTimer;
+@property(nonatomic, strong, nullable) dispatch_source_t playoutTimer;
 @property(nonatomic, strong) NSMutableData *recordedPCM;
 @property(nonatomic) BOOL initialized;
 @property(nonatomic) BOOL playoutInitialized;
@@ -96,7 +99,12 @@ void PBResolveFaceTimeAudioAvailability(
 - (instancetype)init {
   self = [super init];
   if (self) {
-    _audioQueue = dispatch_queue_create("phonebridge.webrtc.audio", DISPATCH_QUEUE_SERIAL);
+    dispatch_queue_attr_t attributes = dispatch_queue_attr_make_with_qos_class(
+        DISPATCH_QUEUE_SERIAL, QOS_CLASS_USER_INTERACTIVE, 0);
+    _recordingQueue =
+        dispatch_queue_create("phonebridge.webrtc.recording", attributes);
+    _playoutQueue =
+        dispatch_queue_create("phonebridge.webrtc.playout", attributes);
     _recordedPCM = [NSMutableData data];
   }
   return self;
@@ -123,13 +131,16 @@ void PBResolveFaceTimeAudioAvailability(
 }
 
 - (BOOL)terminateDevice {
-  dispatch_sync(_audioQueue, ^{
-    [self stopTimerIfIdleForced:YES];
+  dispatch_sync(_recordingQueue, ^{
+    [self stopRecordingTimer];
     self.recording = NO;
-    self.playing = NO;
     self.recordingInitialized = NO;
-    self.playoutInitialized = NO;
     [self.recordedPCM setLength:0];
+  });
+  dispatch_sync(_playoutQueue, ^{
+    [self stopPlayoutTimer];
+    self.playing = NO;
+    self.playoutInitialized = NO;
   });
   _delegate = nil;
   _initialized = NO;
@@ -142,17 +153,17 @@ void PBResolveFaceTimeAudioAvailability(
 }
 
 - (BOOL)startPlayout {
-  dispatch_async(_audioQueue, ^{
+  dispatch_async(_playoutQueue, ^{
     self.playing = YES;
-    [self ensureTimer];
+    [self ensurePlayoutTimer];
   });
   return YES;
 }
 
 - (BOOL)stopPlayout {
-  dispatch_async(_audioQueue, ^{
+  dispatch_async(_playoutQueue, ^{
     self.playing = NO;
-    [self stopTimerIfIdleForced:NO];
+    [self stopPlayoutTimer];
   });
   return YES;
 }
@@ -163,52 +174,76 @@ void PBResolveFaceTimeAudioAvailability(
 }
 
 - (BOOL)startRecording {
-  dispatch_async(_audioQueue, ^{
+  dispatch_async(_recordingQueue, ^{
     self.recording = YES;
-    [self ensureTimer];
+    [self ensureRecordingTimer];
   });
   return YES;
 }
 
 - (BOOL)stopRecording {
-  dispatch_async(_audioQueue, ^{
+  dispatch_async(_recordingQueue, ^{
     self.recording = NO;
-    [self stopTimerIfIdleForced:NO];
+    [self stopRecordingTimer];
   });
   return YES;
 }
 
 - (void)enqueueRecordedPCM16:(NSData *)pcm16 {
   if (pcm16.length == 0) return;
-  dispatch_async(_audioQueue, ^{
+  dispatch_async(_recordingQueue, ^{
     [self.recordedPCM appendData:pcm16];
-    NSUInteger maximumBytes = (NSUInteger)(PBSampleRate * PBChannelCount * sizeof(int16_t) * 2);
+    NSUInteger maximumBytes = (NSUInteger)(
+        PBSampleRate * PBChannelCount * sizeof(int16_t) * PBMaximumRecordedBufferDuration);
     if (self.recordedPCM.length > maximumBytes) {
       NSUInteger excess = self.recordedPCM.length - maximumBytes;
+      excess -= excess % (PBChannelCount * sizeof(int16_t));
       [self.recordedPCM replaceBytesInRange:NSMakeRange(0, excess) withBytes:NULL length:0];
     }
   });
 }
 
-- (void)ensureTimer {
-  if (_timer != nil) return;
-  _timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, _audioQueue);
+- (void)ensureRecordingTimer {
+  if (_recordingTimer != nil) return;
+  _recordingTimer = dispatch_source_create(
+      DISPATCH_SOURCE_TYPE_TIMER, 0, DISPATCH_TIMER_STRICT, _recordingQueue);
   uint64_t interval = (uint64_t)(PBTickDuration * NSEC_PER_SEC);
-  dispatch_source_set_timer(_timer, dispatch_time(DISPATCH_TIME_NOW, 0), interval, interval / 10);
+  dispatch_source_set_timer(
+      _recordingTimer, dispatch_time(DISPATCH_TIME_NOW, 0), interval, 0);
   __weak typeof(self) weakSelf = self;
-  dispatch_source_set_event_handler(_timer, ^{
-    [weakSelf processAudioTick];
+  dispatch_source_set_event_handler(_recordingTimer, ^{
+    [weakSelf processRecordingTick];
   });
-  dispatch_resume(_timer);
+  dispatch_resume(_recordingTimer);
 }
 
-- (void)stopTimerIfIdleForced:(BOOL)forced {
-  if (_timer == nil || (!forced && (_playing || _recording))) return;
-  dispatch_source_cancel(_timer);
-  _timer = nil;
+- (void)ensurePlayoutTimer {
+  if (_playoutTimer != nil) return;
+  _playoutTimer = dispatch_source_create(
+      DISPATCH_SOURCE_TYPE_TIMER, 0, DISPATCH_TIMER_STRICT, _playoutQueue);
+  uint64_t interval = (uint64_t)(PBTickDuration * NSEC_PER_SEC);
+  dispatch_source_set_timer(
+      _playoutTimer, dispatch_time(DISPATCH_TIME_NOW, 0), interval, 0);
+  __weak typeof(self) weakSelf = self;
+  dispatch_source_set_event_handler(_playoutTimer, ^{
+    [weakSelf processPlayoutTick];
+  });
+  dispatch_resume(_playoutTimer);
 }
 
-- (void)processAudioTick {
+- (void)stopRecordingTimer {
+  if (_recordingTimer == nil) return;
+  dispatch_source_cancel(_recordingTimer);
+  _recordingTimer = nil;
+}
+
+- (void)stopPlayoutTimer {
+  if (_playoutTimer == nil) return;
+  dispatch_source_cancel(_playoutTimer);
+  _playoutTimer = nil;
+}
+
+- (void)processRecordingTick {
   const NSUInteger byteCount = PBFramesPerTick * PBChannelCount * sizeof(int16_t);
   if (_recording && _delegate != nil) {
     NSMutableData *data = [NSMutableData dataWithLength:byteCount];
@@ -217,17 +252,45 @@ void PBResolveFaceTimeAudioAvailability(
       [_recordedPCM getBytes:data.mutableBytes length:available];
       [_recordedPCM replaceBytesInRange:NSMakeRange(0, available) withBytes:NULL length:0];
     }
-    AudioBufferList input = {0};
-    input.mNumberBuffers = 1;
-    input.mBuffers[0].mNumberChannels = PBChannelCount;
-    input.mBuffers[0].mDataByteSize = (UInt32)byteCount;
-    input.mBuffers[0].mData = data.mutableBytes;
     AudioUnitRenderActionFlags flags = 0;
     AudioTimeStamp timestamp = {0};
     _delegate.deliverRecordedData(
-        &flags, &timestamp, 0, PBFramesPerTick, &input, NULL, nil);
+        &flags,
+        &timestamp,
+        0,
+        PBFramesPerTick,
+        NULL,
+        NULL,
+        ^OSStatus(
+            AudioUnitRenderActionFlags *renderFlags,
+            const AudioTimeStamp *renderTimestamp,
+            NSInteger inputBusNumber,
+            UInt32 frameCount,
+            AudioBufferList *inputData,
+            void *renderContext) {
+          if (inputData == NULL || inputData->mNumberBuffers != 1) return -1;
+          AudioBuffer *buffer = &inputData->mBuffers[0];
+          NSUInteger requestedBytes =
+              frameCount * PBChannelCount * sizeof(int16_t);
+          if (buffer->mData == NULL || buffer->mDataByteSize < requestedBytes) {
+            return -1;
+          }
+          memcpy(buffer->mData, data.bytes, MIN(requestedBytes, data.length));
+          if (data.length < requestedBytes) {
+            memset(
+                (uint8_t *)buffer->mData + data.length,
+                0,
+                requestedBytes - data.length);
+          }
+          buffer->mNumberChannels = PBChannelCount;
+          buffer->mDataByteSize = (UInt32)requestedBytes;
+          return noErr;
+        });
   }
+}
 
+- (void)processPlayoutTick {
+  const NSUInteger byteCount = PBFramesPerTick * PBChannelCount * sizeof(int16_t);
   if (_playing && _delegate != nil) {
     NSMutableData *data = [NSMutableData dataWithLength:byteCount];
     AudioBufferList output = {0};

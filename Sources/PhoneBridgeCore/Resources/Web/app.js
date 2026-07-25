@@ -389,8 +389,10 @@ elements.mediaButton.addEventListener("click", async () => {
         navigator.mediaDevices.getUserMedia({
           audio: {
             echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true,
+            noiseSuppression: false,
+            autoGainControl: false,
+            channelCount: 1,
+            sampleRate: 48000,
           },
           video: false,
         }),
@@ -401,7 +403,7 @@ elements.mediaButton.addEventListener("click", async () => {
       for (const track of stream.getTracks()) peer.addTrack(track, stream);
     }
     peer.addEventListener("track", (event) => {
-      elements.remoteAudio.srcObject = event.streams[0] || new MediaStream([event.track]);
+      attachRemoteAudioTrack(event.track, event.streams[0]);
     });
     peer.addEventListener("connectionstatechange", () => {
       updateMediaConnectionStatus(peer, transportOnly);
@@ -423,6 +425,7 @@ elements.mediaButton.addEventListener("click", async () => {
     });
     state.mediaSessionID = answer.sessionID;
     await peer.setRemoteDescription({ type: answer.type, sdp: answer.sdp });
+    await attachNegotiatedRemoteAudio(peer);
     await waitForPeerConnection(peer, 20000);
     elements.mediaButton.textContent = "Disconnect audio";
     elements.mediaButton.classList.add("connected");
@@ -436,6 +439,29 @@ elements.mediaButton.addEventListener("click", async () => {
     elements.mediaButton.disabled = false;
   }
 });
+
+function attachRemoteAudioTrack(track, stream) {
+  if (!track || track.kind !== "audio") return;
+  elements.remoteAudio.srcObject = stream || new MediaStream([track]);
+}
+
+async function attachNegotiatedRemoteAudio(peer) {
+  const audioTrack = peer
+    .getReceivers()
+    .map((receiver) => receiver.track)
+    .find((track) => track?.kind === "audio");
+  if (!audioTrack) {
+    throw new Error("The Mac did not negotiate a browser audio track.");
+  }
+  if (!elements.remoteAudio.srcObject) {
+    attachRemoteAudioTrack(audioTrack);
+  }
+  try {
+    await elements.remoteAudio.play();
+  } catch (error) {
+    throw new Error(`Browser playback was blocked: ${error.message}`);
+  }
+}
 
 async function waitForPeerConnection(peer, timeoutMilliseconds) {
   if (["connected", "completed"].includes(peer.iceConnectionState)) return;
