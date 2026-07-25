@@ -75,19 +75,22 @@ public struct CallLaunchReceipt: Codable, Equatable, Sendable {
   public let normalizedTarget: String
   public let url: String
   public let dryRun: Bool
+  public let handoffConfirmed: Bool?
 
   public init(
     accepted: Bool,
     service: CallService,
     normalizedTarget: String,
     url: String,
-    dryRun: Bool
+    dryRun: Bool,
+    handoffConfirmed: Bool? = nil
   ) {
     self.accepted = accepted
     self.service = service
     self.normalizedTarget = normalizedTarget
     self.url = url
     self.dryRun = dryRun
+    self.handoffConfirmed = handoffConfirmed
   }
 }
 

@@ -22,12 +22,24 @@ public struct MacCallLauncher: CallLaunching {
     }
 
     #if os(macOS)
+      guard !CallControlAccessibilityAuthorization.hasPendingCallHandoff else {
+        throw PhoneBridgeError.callLaunchFailed(
+          "another Click to Call confirmation is already pending on the Mac")
+      }
       let accepted = NSWorkspace.shared.open(prepared.url)
       guard accepted else {
         throw PhoneBridgeError.callLaunchFailed(
           "no application accepted the \(prepared.url.scheme ?? "call") URL")
       }
-      return receipt(prepared: prepared, request: request, accepted: true, dryRun: false)
+      let handoffConfirmed =
+        await CallControlAccessibilityAuthorization.confirmPendingCallHandoff()
+      return receipt(
+        prepared: prepared,
+        request: request,
+        accepted: true,
+        dryRun: false,
+        handoffConfirmed: handoffConfirmed
+      )
     #else
       throw PhoneBridgeError.unsupportedPlatform("Call launching requires macOS.")
     #endif
@@ -37,14 +49,16 @@ public struct MacCallLauncher: CallLaunching {
     prepared: PreparedCallURL,
     request: CallLaunchRequest,
     accepted: Bool,
-    dryRun: Bool
+    dryRun: Bool,
+    handoffConfirmed: Bool? = nil
   ) -> CallLaunchReceipt {
     CallLaunchReceipt(
       accepted: accepted,
       service: request.service,
       normalizedTarget: prepared.normalizedTarget,
       url: prepared.url.absoluteString,
-      dryRun: dryRun
+      dryRun: dryRun,
+      handoffConfirmed: handoffConfirmed
     )
   }
 }

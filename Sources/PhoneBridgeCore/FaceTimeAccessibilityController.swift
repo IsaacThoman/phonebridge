@@ -41,6 +41,18 @@ public enum CallControlAccessibilityAuthorization {
   public static func diagnostic() -> CallControlAccessibilityDiagnostic {
     FaceTimeAccessibilityRuntime().diagnostic()
   }
+
+  @MainActor
+  public static var hasPendingCallHandoff: Bool {
+    FaceTimeAccessibilityRuntime().hasPendingCallHandoff()
+  }
+
+  @MainActor
+  public static func confirmPendingCallHandoff(
+    timeout: TimeInterval = 3
+  ) async -> Bool {
+    await FaceTimeAccessibilityRuntime().confirmPendingCallHandoff(timeout: timeout)
+  }
 }
 
 @MainActor
@@ -117,6 +129,28 @@ final class FaceTimeAccessibilityRuntime {
         )
       }
     )
+  }
+
+  func hasPendingCallHandoff() -> Bool {
+    guard CallControlAccessibilityAuthorization.isTrusted else { return false }
+    return pendingCallHandoff(in: callElements()) != nil
+  }
+
+  func confirmPendingCallHandoff(timeout: TimeInterval) async -> Bool {
+    guard CallControlAccessibilityAuthorization.isTrusted else { return false }
+    let deadline = Date().addingTimeInterval(max(0.1, timeout))
+    repeat {
+      if let button = pendingCallHandoff(in: callElements()) {
+        do {
+          try press(button)
+          return true
+        } catch {
+          return false
+        }
+      }
+      try? await Task.sleep(for: .milliseconds(100))
+    } while Date() < deadline
+    return false
   }
 
   func perform(_ request: CallControlRequest) throws -> CallControlReceipt {
@@ -197,6 +231,17 @@ final class FaceTimeAccessibilityRuntime {
 
   private func callElements() -> [ElementInfo] {
     callElements(applications: callApplications())
+  }
+
+  private func pendingCallHandoff(in elements: [ElementInfo]) -> ElementInfo? {
+    let notificationElements = elements.filter {
+      $0.applicationBundleIdentifier == "com.apple.notificationcenterui"
+    }
+    let hasPrompt = notificationElements.contains {
+      normalize($0.label) == "click to call"
+    }
+    guard hasPrompt else { return nil }
+    return findButton(in: notificationElements, matching: ["call"])
   }
 
   private func callApplications() -> [NSRunningApplication] {

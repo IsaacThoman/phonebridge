@@ -328,11 +328,15 @@ elements.callForm.addEventListener("submit", async (event) => {
   elements.callDialog.close();
   state.pendingCall = null;
   try {
-    await api("/api/calls", {
+    const receipt = await api("/api/calls", {
       method: "POST",
       body: JSON.stringify(request),
     });
-    showToast(`Call handed to the Mac for ${label}.`);
+    showToast(
+      receipt.handoffConfirmed
+        ? `Calling ${label} through the Mac.`
+        : `Call opened for ${label}; confirm it on the Mac.`,
+    );
   } catch (error) {
     showToast(`Could not start call: ${error.message}`);
   }

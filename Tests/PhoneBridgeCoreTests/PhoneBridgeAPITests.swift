@@ -32,7 +32,8 @@ private actor StubLauncher: CallLaunching {
       service: request.service,
       normalizedTarget: prepared.normalizedTarget,
       url: prepared.url.absoluteString,
-      dryRun: dryRun
+      dryRun: dryRun,
+      handoffConfirmed: true
     )
   }
 }
@@ -172,6 +173,7 @@ struct PhoneBridgeAPITests {
     #expect(response.status == 202)
     let receipt = try JSONDecoder().decode(CallLaunchReceipt.self, from: response.body)
     #expect(receipt.url == "facetime-audio:person@example.com")
+    #expect(receipt.handoffConfirmed == true)
   }
 
   @Test("Incoming calls can be listed and answered")
