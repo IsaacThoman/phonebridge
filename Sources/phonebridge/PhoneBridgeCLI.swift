@@ -30,6 +30,8 @@ struct PhoneBridgeCLI {
       try await runCall(Array(arguments.dropFirst()))
     case "server":
       try await runServer(Array(arguments.dropFirst()))
+    case "bridge":
+      try runBridge(Array(arguments.dropFirst()))
     case "help", "--help", "-h":
       printHelp()
     default:
@@ -112,6 +114,27 @@ struct PhoneBridgeCLI {
     await server.waitUntilCancelled()
   }
 
+  private static func runBridge(_ arguments: [String]) throws {
+    guard arguments.first == "probe" else {
+      throw PhoneBridgeError.invalidArguments("Usage: phonebridge bridge probe [--json]")
+    }
+    let result = PrivateCallBridgeProbe().inspect()
+    if arguments.contains("--json") {
+      try printJSON(result)
+      return
+    }
+    print("TelephonyUtilities: \(result.frameworkLoaded ? "loaded" : "unavailable")")
+    print("Call host: \(result.callHostBundleIdentifier)")
+    print("Inside call host: \(result.runningInsideCallHost ? "yes" : "no")")
+    for classProbe in result.classes {
+      let available = classProbe.available ? "available" : "missing"
+      print("\(classProbe.name): \(available)")
+      for selector in classProbe.selectors where selector.available {
+        print("  \(selector.kind.rawValue): \(selector.name)")
+      }
+    }
+  }
+
   private static func option(_ name: String, in arguments: [String]) -> String? {
     guard let index = arguments.firstIndex(of: name), arguments.indices.contains(index + 1) else {
       return nil
@@ -159,6 +182,7 @@ struct PhoneBridgeCLI {
         phonebridge contacts search <query> [--limit N] [--json]
         phonebridge call start --service <cellular|facetime-audio> --to <target> [--dry-run] [--json]
         phonebridge server [--host 127.0.0.1] [--port 8742] [--token TOKEN] [--allow-insecure-lan]
+        phonebridge bridge probe [--json]
         phonebridge version
       """
     )

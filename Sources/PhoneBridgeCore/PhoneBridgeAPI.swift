@@ -75,6 +75,9 @@ public actor PhoneBridgeAPI {
       if request.method == "GET", request.path == "/api/capabilities" {
         return try .json(capabilities())
       }
+      if request.method == "GET", request.path == "/api/bridge/probe" {
+        return try .json(PrivateCallBridgeProbe().inspect())
+      }
       if request.method == "GET", request.path == "/api/contacts" {
         let query = request.queryValue("q") ?? ""
         let rawLimit = request.queryValue("limit").flatMap(Int.init) ?? 25

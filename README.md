@@ -45,6 +45,9 @@ swift run phonebridge server --token "choose-a-long-random-token"
 # Build a stable signed app bundle for macOS privacy permissions.
 sh scripts/build-app.sh
 open dist/PhoneBridge.app
+
+# Inspect private call-control classes and selectors without invoking them.
+swift run phonebridge bridge probe --json
 ```
 
 ## Safety model

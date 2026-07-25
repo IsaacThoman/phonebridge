@@ -93,4 +93,19 @@ struct PhoneBridgeAPITests {
     let receipt = try JSONDecoder().decode(CallLaunchReceipt.self, from: response.body)
     #expect(receipt.url == "facetime-audio:person@example.com")
   }
+
+  @Test("Private bridge probe is authenticated and structured")
+  func bridgeProbe() async throws {
+    let response = await api.handle(
+      HTTPRequest(
+        method: "GET",
+        target: "/api/bridge/probe",
+        headers: ["authorization": "Bearer correct-token"],
+        body: Data()
+      )
+    )
+    #expect(response.status == 200)
+    let decoded = try JSONDecoder().decode(PrivateCallBridgeCapabilities.self, from: response.body)
+    #expect(decoded.classes.contains { $0.name == "TUCallCenter" })
+  }
 }
