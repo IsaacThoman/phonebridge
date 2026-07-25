@@ -104,7 +104,10 @@ async function refreshCalls() {
     const snapshot = await api("/api/calls");
     elements.callControlStatus.textContent = snapshot.calls.length
       ? `${snapshot.calls.length} active`
-      : "Ready";
+      : snapshot.accessibilityAuthorizationRequired
+        ? "Setup needed"
+        : "Ready";
+    state.callControlAuthorizationRequired = snapshot.accessibilityAuthorizationRequired;
     renderLiveCalls(snapshot.calls);
   } catch (error) {
     elements.callControlStatus.textContent = "Unavailable";
@@ -116,7 +119,9 @@ function renderLiveCalls(calls) {
   if (!calls.length) {
     const empty = document.createElement("p");
     empty.className = "no-live-calls";
-    empty.textContent = "No active calls. Incoming phone and FaceTime Audio calls appear here.";
+    empty.textContent = state.callControlAuthorizationRequired
+      ? "Grant Call Control Access in the PhoneBridge Mac app to answer and manage calls."
+      : "No active calls. Incoming phone and FaceTime Audio calls appear here.";
     elements.liveCallList.append(empty);
     return;
   }

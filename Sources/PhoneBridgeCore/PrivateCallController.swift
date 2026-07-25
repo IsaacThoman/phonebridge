@@ -76,10 +76,16 @@ public struct ActiveCallSummary: Codable, Sendable, Equatable {
 public struct CallControlSnapshot: Codable, Sendable, Equatable {
   public let available: Bool
   public let calls: [ActiveCallSummary]
+  public let accessibilityAuthorizationRequired: Bool
 
-  public init(available: Bool, calls: [ActiveCallSummary]) {
+  public init(
+    available: Bool,
+    calls: [ActiveCallSummary],
+    accessibilityAuthorizationRequired: Bool = false
+  ) {
     self.available = available
     self.calls = calls
+    self.accessibilityAuthorizationRequired = accessibilityAuthorizationRequired
   }
 }
 
@@ -138,7 +144,9 @@ public final class PrivateCallController: CallControlling {
     }
     return CallControlSnapshot(
       available: true,
-      calls: []
+      calls: [],
+      accessibilityAuthorizationRequired:
+        !CallControlAccessibilityAuthorization.isTrusted
     )
   }
 

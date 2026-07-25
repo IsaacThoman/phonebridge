@@ -10,7 +10,8 @@ Remote control and WebRTC audio bridge for cellular and FaceTime Audio calls on 
 ## Goals
 
 - Search macOS Contacts without uploading the address book.
-- Place iPhone-relayed cellular calls and FaceTime Audio calls.
+- Place iPhone-relayed cellular calls and FaceTime Audio calls, preferring
+  FaceTime Audio whenever an endpoint supports both.
 - Answer, end, mute, hold, and send DTMF from an authenticated web client.
 - Proxy two-way call audio through WebRTC.
 - Provide a streaming JSON-RPC/CLI surface for agents and scripts.
@@ -107,10 +108,22 @@ network paths cannot form a direct ICE connection.
 this endpoint and exposes Answer, Decline/End, Hold/Resume, and Mute/Unmute.
 `POST /api/calls/control` invokes the corresponding operation.
 
-This adapter dynamically verifies every private Objective-C selector and its ABI
-before invocation. It runs on the call center's required main queue and fails
-closed when an expected operation is missing. TelephonyUtilities is not a public
-Apple SDK contract, so a macOS update can still change or remove this behavior.
+PhoneBridge first uses a capability-gated TelephonyUtilities adapter. It
+dynamically verifies every private Objective-C selector and its ABI, runs on the
+call center's required main queue, and fails closed when an expected operation
+is missing.
+
+Sequoia can expose the private call-center object while filtering its call list
+for third-party processes. The signed Mac app therefore has a second adapter
+that reads and presses only FaceTime/Phone call controls through macOS
+Accessibility. Click **Grant Call Control Access** in the Mac app, approve
+PhoneBridge under **System Settings → Privacy & Security → Accessibility**, and
+restart the app if macOS requests it. The web client reports “Setup needed”
+until that permission is present.
+
+Both TelephonyUtilities and the FaceTime/Phone accessibility hierarchy are
+unsupported Apple integration points, so a macOS update can still change or
+remove behavior.
 
 ## Safety model
 
@@ -131,8 +144,8 @@ Apple SDK contract, so a macOS update can still change or remove this behavior.
 
 | macOS | Apple call host | PhoneBridge adapter |
 |---|---|---|
-| Sequoia 15 | FaceTime.app | URL launch, TelephonyUtilities control, process audio tap |
-| Tahoe 26 | Phone.app | URL launch, TelephonyUtilities control, process audio tap |
+| Sequoia 15 | FaceTime.app | URL launch, TelephonyUtilities + Accessibility control, process audio tap |
+| Tahoe 26 | Phone.app | URL launch, TelephonyUtilities + Accessibility control, process audio tap |
 
 The private call-control adapter is research-only and is not suitable for App
 Store distribution. PhoneBridge does not disable SIP or alter other system
