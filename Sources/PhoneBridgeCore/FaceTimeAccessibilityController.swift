@@ -2,6 +2,18 @@ import AppKit
 import ApplicationServices
 import Foundation
 
+public struct CallControlAccessibilityElementDiagnostic: Codable, Sendable {
+  public let role: String
+  public let label: String
+  public let enabled: Bool
+}
+
+public struct CallControlAccessibilityDiagnostic: Codable, Sendable {
+  public let trusted: Bool
+  public let applicationBundleIdentifiers: [String]
+  public let elements: [CallControlAccessibilityElementDiagnostic]
+}
+
 public enum CallControlAccessibilityAuthorization {
   public static var isTrusted: Bool {
     AXIsProcessTrusted()
@@ -21,6 +33,11 @@ public enum CallControlAccessibilityAuthorization {
       )
     else { return }
     NSWorkspace.shared.open(url)
+  }
+
+  @MainActor
+  public static func diagnostic() -> CallControlAccessibilityDiagnostic {
+    FaceTimeAccessibilityRuntime().diagnostic()
   }
 }
 
@@ -74,6 +91,21 @@ final class FaceTimeAccessibilityRuntime {
       onHold: onHold,
       muted: muted,
       supportsDTMF: supportsDTMF
+    )
+  }
+
+  func diagnostic() -> CallControlAccessibilityDiagnostic {
+    let applications = callApplications()
+    return CallControlAccessibilityDiagnostic(
+      trusted: CallControlAccessibilityAuthorization.isTrusted,
+      applicationBundleIdentifiers: applications.compactMap(\.bundleIdentifier),
+      elements: callElements(applications: applications).map {
+        CallControlAccessibilityElementDiagnostic(
+          role: $0.role,
+          label: $0.label,
+          enabled: $0.enabled
+        )
+      }
     )
   }
 
@@ -148,13 +180,19 @@ final class FaceTimeAccessibilityRuntime {
   }
 
   private func callElements() -> [ElementInfo] {
-    let applications = NSWorkspace.shared.runningApplications.filter { application in
+    callElements(applications: callApplications())
+  }
+
+  private func callApplications() -> [NSRunningApplication] {
+    NSWorkspace.shared.runningApplications.filter { application in
       guard let bundleIdentifier = application.bundleIdentifier else { return false }
       return callApplicationBundleIdentifiers.contains(bundleIdentifier)
         || bundleIdentifier.localizedCaseInsensitiveContains("FaceTimeNotification")
         || bundleIdentifier.localizedCaseInsensitiveContains("mobilephone")
     }
+  }
 
+  private func callElements(applications: [NSRunningApplication]) -> [ElementInfo] {
     var result: [ElementInfo] = []
     var remaining = 1_000
     for application in applications where remaining > 0 {

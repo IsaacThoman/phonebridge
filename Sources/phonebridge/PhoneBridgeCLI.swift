@@ -66,6 +66,10 @@ struct PhoneBridgeCLI {
   }
 
   private static func runCall(_ arguments: [String]) async throws {
+    if arguments.first == "accessibility-dump" {
+      try printJSON(await CallControlAccessibilityAuthorization.diagnostic())
+      return
+    }
     if arguments.first == "status" {
       let snapshot = try await PrivateCallController().snapshot()
       if arguments.contains("--json") {
@@ -104,7 +108,7 @@ struct PhoneBridgeCLI {
     }
     guard arguments.first == "start" else {
       throw PhoneBridgeError.invalidArguments(
-        "Usage: phonebridge call <start|status|control> [options]"
+        "Usage: phonebridge call <start|status|control|accessibility-dump> [options]"
       )
     }
     let rest = Array(arguments.dropFirst())
@@ -280,6 +284,7 @@ struct PhoneBridgeCLI {
         phonebridge contacts search <query> [--limit N] [--json]
         phonebridge call start --service <cellular|facetime-audio> --to <target> [--dry-run] [--json]
         phonebridge call status [--json]
+        phonebridge call accessibility-dump --json
         phonebridge call control <answer|hang_up|hold|resume|mute|unmute|send_dtmf> [--id CALL_ID] [--digit KEY] [--json]
         phonebridge server [--host 127.0.0.1] [--port 8742] [--token TOKEN] [--tls-p12 IDENTITY.p12] [--allow-insecure-lan]
         phonebridge bridge probe [--json]
