@@ -81,4 +81,15 @@ typedef void (^PBRTCPlayoutHandler)(
 FOUNDATION_EXPORT RTCPeerConnectionFactory *
 PBRTCCreatePeerConnectionFactory(PBRTCAudioDevice *audioDevice);
 
+typedef void (^PBFaceTimeAvailabilityHandler)(NSInteger status);
+
+/// Resolves Identity Services registration for a FaceTime Audio destination.
+///
+/// Status 1 is registered, status 2 is unregistered, and status 0 is unknown.
+/// This is a private, best-effort macOS capability and always completes.
+FOUNDATION_EXPORT void PBResolveFaceTimeAudioAvailability(
+    NSString *destination,
+    NSTimeInterval timeout,
+    PBFaceTimeAvailabilityHandler completion);
+
 NS_ASSUME_NONNULL_END

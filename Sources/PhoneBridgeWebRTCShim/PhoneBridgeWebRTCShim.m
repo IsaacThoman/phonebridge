@@ -1,9 +1,83 @@
 #import "PhoneBridgeWebRTCShim.h"
+#import <dlfcn.h>
+#import <objc/message.h>
 
 static const double PBSampleRate = 48000.0;
 static const NSInteger PBChannelCount = 2;
 static const UInt32 PBFramesPerTick = 480;
 static const NSTimeInterval PBTickDuration = 0.01;
+
+void PBResolveFaceTimeAudioAvailability(
+    NSString *destination,
+    NSTimeInterval timeout,
+    PBFaceTimeAvailabilityHandler completion) {
+  static void *idsHandle;
+  static dispatch_once_t onceToken;
+  dispatch_once(&onceToken, ^{
+    idsHandle = dlopen(
+      "/System/Library/PrivateFrameworks/IDS.framework/IDS",
+      RTLD_NOW | RTLD_LOCAL
+    );
+  });
+
+  dispatch_queue_t queue =
+    dispatch_queue_create("phonebridge.ids.facetime-availability", DISPATCH_QUEUE_SERIAL);
+  if (idsHandle == NULL) {
+    dispatch_async(queue, ^{ completion(0); });
+    return;
+  }
+
+  Class queryClass = NSClassFromString(@"IDSIDQueryController");
+  SEL sharedSelector = NSSelectorFromString(@"sharedInstance");
+  SEL querySelector = NSSelectorFromString(
+    @"requestIDStatusForDestination:service:listenerID:queue:completionBlock:"
+  );
+  if (queryClass == Nil || ![queryClass respondsToSelector:sharedSelector]) {
+    dispatch_async(queue, ^{ completion(0); });
+    return;
+  }
+
+  id controller = ((id (*)(id, SEL))objc_msgSend)(queryClass, sharedSelector);
+  if (controller == nil || ![controller respondsToSelector:querySelector]) {
+    dispatch_async(queue, ^{ completion(0); });
+    return;
+  }
+
+  __block BOOL finished = NO;
+  void (^finish)(NSInteger) = ^(NSInteger status) {
+    dispatch_async(queue, ^{
+      if (finished) return;
+      finished = YES;
+      completion(status);
+    });
+  };
+  void (^statusHandler)(NSInteger) = ^(NSInteger status) {
+    finish(status);
+  };
+
+  BOOL accepted = ((BOOL (*)(id, SEL, id, id, id, id, id))objc_msgSend)(
+    controller,
+    querySelector,
+    destination,
+    @"com.apple.private.alloy.facetime.audio",
+    @"com.isaacthoman.phonebridge",
+    queue,
+    statusHandler
+  );
+  if (!accepted) {
+    finish(0);
+    return;
+  }
+
+  dispatch_after(
+    dispatch_time(
+      DISPATCH_TIME_NOW,
+      (int64_t)(MAX(timeout, 0.1) * (double)NSEC_PER_SEC)
+    ),
+    queue,
+    ^{ finish(0); }
+  );
+}
 
 @interface PBRTCAudioDevice ()
 @property(nonatomic, strong, nullable) id<RTCAudioDeviceDelegate> delegate;

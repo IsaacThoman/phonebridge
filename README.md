@@ -80,9 +80,11 @@ open "http://127.0.0.1:8742/?transport-only=1"
 ```
 
 Contacts supplies phone numbers and email addresses, but it does not report
-whether a particular endpoint is currently registered for FaceTime. The web
-client therefore offers FaceTime Audio first and labels cellular as the fallback;
-FaceTime itself remains the source of truth when the call starts.
+whether a particular endpoint is registered for FaceTime. On supported macOS
+versions PhoneBridge asks the private Identity Services availability controller:
+registered numbers offer FaceTime Audio first, while unregistered numbers fall
+back to cellular. If that private query is unavailable or inconclusive, the web
+client safely offers both and labels cellular as the fallback.
 
 ## Current media path
 

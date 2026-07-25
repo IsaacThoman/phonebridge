@@ -8,9 +8,19 @@ public protocol ContactDirectory: Sendable {
 
 public actor MacContactDirectory: ContactDirectory {
   private let store: CNContactStore
+  private let faceTimeAvailabilityChecker: any FaceTimeAvailabilityChecking
 
   public init(store: CNContactStore = CNContactStore()) {
     self.store = store
+    self.faceTimeAvailabilityChecker = IDSFaceTimeAvailabilityChecker()
+  }
+
+  init(
+    store: CNContactStore,
+    faceTimeAvailabilityChecker: any FaceTimeAvailabilityChecking
+  ) {
+    self.store = store
+    self.faceTimeAvailabilityChecker = faceTimeAvailabilityChecker
   }
 
   public func requestAccess() async throws {
@@ -93,7 +103,7 @@ public actor MacContactDirectory: ContactDirectory {
       }
       throw error
     }
-    return results
+    return await resolveFaceTimeAvailability(in: results)
   }
 
   private static func endpoints(for contact: CNContact) -> [ContactEndpoint] {
@@ -125,5 +135,56 @@ public actor MacContactDirectory: ContactDirectory {
     }
 
     return endpoints
+  }
+
+  private func resolveFaceTimeAvailability(
+    in contacts: [ContactSummary]
+  ) async -> [ContactSummary] {
+    let checker = faceTimeAvailabilityChecker
+    return await withTaskGroup(
+      of: (Int, ContactSummary?).self,
+      returning: [ContactSummary].self
+    ) { group in
+      for (index, contact) in contacts.enumerated() {
+        group.addTask {
+          var endpoints: [ContactEndpoint] = []
+          for endpoint in contact.endpoints {
+            let availability = await checker.availability(
+              for: endpoint.kind,
+              value: endpoint.value
+            )
+            let services = ContactEndpointServicePolicy.services(
+              for: endpoint.kind,
+              availability: availability
+            )
+            guard !services.isEmpty else { continue }
+            endpoints.append(
+              ContactEndpoint(
+                kind: endpoint.kind,
+                label: endpoint.label,
+                value: endpoint.value,
+                services: services
+              ))
+          }
+          guard !endpoints.isEmpty else { return (index, nil) }
+          return (
+            index,
+            ContactSummary(
+              id: contact.id,
+              displayName: contact.displayName,
+              endpoints: endpoints
+            )
+          )
+        }
+      }
+
+      var indexed: [(Int, ContactSummary)] = []
+      for await (index, contact) in group {
+        if let contact {
+          indexed.append((index, contact))
+        }
+      }
+      return indexed.sorted { $0.0 < $1.0 }.map(\.1)
+    }
   }
 }
