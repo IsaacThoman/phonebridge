@@ -71,9 +71,10 @@ public actor WebRTCSessionManager: WebRTCSignaling {
     self.audioDevice = audioDevice
     audioSink = WebRTCAudioDeviceSink(audioDevice: audioDevice)
     factory = PBRTCCreatePeerConnectionFactory(audioDevice)
-    callAudioBundleIdentifier =
-      ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 26
-      ? "com.apple.mobilephone" : "com.apple.FaceTime"
+    // FaceTime.app and Phone.app host the call UI, but Core Audio attributes the
+    // live media stream to the AVConference daemon on both cellular relay and
+    // FaceTime calls.
+    callAudioBundleIdentifier = "com.apple.avconferenced"
     let metrics = self.metrics
     let virtualMicrophone = self.virtualMicrophone
     audioDevice.playoutHandler = { data, _, _, frameCount in

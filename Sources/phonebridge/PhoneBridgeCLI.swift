@@ -211,13 +211,17 @@ struct PhoneBridgeCLI {
     let rest = Array(arguments.dropFirst())
     let host = option("--host", in: rest) ?? "facetime"
     let bundleIdentifier: String
-    switch host {
-    case "facetime":
-      bundleIdentifier = "com.apple.FaceTime"
-    case "phone":
-      bundleIdentifier = "com.apple.mobilephone"
-    default:
-      throw PhoneBridgeError.invalidArguments("--host must be facetime or phone")
+    if let explicitBundleIdentifier = option("--bundle-id", in: rest) {
+      bundleIdentifier = explicitBundleIdentifier
+    } else {
+      switch host {
+      case "facetime":
+        bundleIdentifier = "com.apple.FaceTime"
+      case "phone":
+        bundleIdentifier = "com.apple.mobilephone"
+      default:
+        throw PhoneBridgeError.invalidArguments("--host must be facetime or phone")
+      }
     }
     let seconds = max(1, min(intOption("--seconds", in: rest) ?? 5, 30))
     let meter = AudioTapMeter()
@@ -288,7 +292,7 @@ struct PhoneBridgeCLI {
         phonebridge call control <answer|hang_up|hold|resume|mute|unmute|send_dtmf> [--id CALL_ID] [--digit KEY] [--json]
         phonebridge server [--host 127.0.0.1] [--port 8742] [--token TOKEN] [--tls-p12 IDENTITY.p12] [--allow-insecure-lan]
         phonebridge bridge probe [--json]
-        phonebridge audio tap --host <facetime|phone> [--seconds N] [--json]
+        phonebridge audio tap [--host <facetime|phone> | --bundle-id ID] [--seconds N] [--json]
         phonebridge audio devices [--json]
         phonebridge version
       """
