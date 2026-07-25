@@ -3,9 +3,11 @@ import ApplicationServices
 import Foundation
 
 public struct CallControlAccessibilityElementDiagnostic: Codable, Sendable {
+  public let applicationBundleIdentifier: String
   public let role: String
   public let label: String
   public let enabled: Bool
+  public let actions: [String]
 }
 
 public struct CallControlAccessibilityDiagnostic: Codable, Sendable {
@@ -44,10 +46,12 @@ public enum CallControlAccessibilityAuthorization {
 @MainActor
 final class FaceTimeAccessibilityRuntime {
   private struct ElementInfo {
+    let applicationBundleIdentifier: String
     let element: AXUIElement
     let role: String
     let label: String
     let enabled: Bool
+    let actions: [String]
   }
 
   private let callApplicationBundleIdentifiers = [
@@ -101,9 +105,11 @@ final class FaceTimeAccessibilityRuntime {
       applicationBundleIdentifiers: applications.compactMap(\.bundleIdentifier),
       elements: callElements(applications: applications).map {
         CallControlAccessibilityElementDiagnostic(
+          applicationBundleIdentifier: $0.applicationBundleIdentifier,
           role: $0.role,
           label: $0.label,
-          enabled: $0.enabled
+          enabled: $0.enabled,
+          actions: $0.actions
         )
       }
     )
@@ -196,8 +202,10 @@ final class FaceTimeAccessibilityRuntime {
     var result: [ElementInfo] = []
     var remaining = 1_000
     for application in applications where remaining > 0 {
+      let bundleIdentifier = application.bundleIdentifier ?? "unknown"
       collect(
         AXUIElementCreateApplication(application.processIdentifier),
+        applicationBundleIdentifier: bundleIdentifier,
         depth: 0,
         remaining: &remaining,
         into: &result
@@ -208,6 +216,7 @@ final class FaceTimeAccessibilityRuntime {
 
   private func collect(
     _ element: AXUIElement,
+    applicationBundleIdentifier: String,
     depth: Int,
     remaining: inout Int,
     into result: inout [ElementInfo]
@@ -221,17 +230,34 @@ final class FaceTimeAccessibilityRuntime {
       stringAttribute(element, kAXDescriptionAttribute as CFString),
       stringAttribute(element, kAXHelpAttribute as CFString),
       stringAttribute(element, kAXValueAttribute as CFString),
+      stringAttribute(element, kAXIdentifierAttribute as CFString),
     ]
     .compactMap { $0 }
     .filter { !$0.isEmpty }
     .joined(separator: " · ")
     let enabled = boolAttribute(element, kAXEnabledAttribute as CFString) ?? true
+    let actions = actionNames(element)
     if !role.isEmpty || !label.isEmpty {
-      result.append(ElementInfo(element: element, role: role, label: label, enabled: enabled))
+      result.append(
+        ElementInfo(
+          applicationBundleIdentifier: applicationBundleIdentifier,
+          element: element,
+          role: role,
+          label: label,
+          enabled: enabled,
+          actions: actions
+        )
+      )
     }
 
     for child in elementArrayAttribute(element, kAXChildrenAttribute as CFString) {
-      collect(child, depth: depth + 1, remaining: &remaining, into: &result)
+      collect(
+        child,
+        applicationBundleIdentifier: applicationBundleIdentifier,
+        depth: depth + 1,
+        remaining: &remaining,
+        into: &result
+      )
     }
   }
 
@@ -305,5 +331,13 @@ final class FaceTimeAccessibilityRuntime {
       let values = value as? [AXUIElement]
     else { return [] }
     return values
+  }
+
+  private func actionNames(_ element: AXUIElement) -> [String] {
+    var value: CFArray?
+    guard AXUIElementCopyActionNames(element, &value) == .success,
+      let names = value as? [String]
+    else { return [] }
+    return names
   }
 }
