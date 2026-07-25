@@ -73,6 +73,10 @@ swift run phonebridge call control hang_up --id CALL_UUID
 # Inspect installed audio devices and test a call-host process tap.
 swift run phonebridge audio devices --json
 swift run phonebridge audio tap --host facetime --seconds 5 --json
+swift run phonebridge audio tap \
+  --bundle-id com.apple.avconferenced \
+  --seconds 5 \
+  --json
 
 # Exercise ICE/DTLS/SDP without requesting browser microphone permission.
 # This is a transport diagnostic, not a call-audio test.
@@ -91,7 +95,7 @@ client safely offers both and labels cellular as the fallback.
 The native WebRTC endpoint uses a custom 48 kHz stereo audio device:
 
 ```text
-Phone.app / FaceTime.app output
+Phone.app / FaceTime.app call media (com.apple.avconferenced)
   → macOS Core Audio process tap
   → native WebRTC audio input
   → remote browser speaker
@@ -127,6 +131,11 @@ Accessibility. Click **Grant Call Control Access** in the Mac app, approve
 PhoneBridge under **System Settings → Privacy & Security → Accessibility**, and
 restart the app if macOS requests it. The web client reports “Setup needed”
 until that permission is present.
+
+That same scoped Accessibility adapter confirms the `Click to Call` banner
+created by an authenticated web launch. The API reports
+`handoffConfirmed: true` when it pressed the banner's exact `Call` button.
+PhoneBridge refuses to auto-confirm when an older handoff is already pending.
 
 Both TelephonyUtilities and the FaceTime/Phone accessibility hierarchy are
 unsupported Apple integration points, so a macOS update can still change or
