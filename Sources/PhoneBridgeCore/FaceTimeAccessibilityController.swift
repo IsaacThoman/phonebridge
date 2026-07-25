@@ -57,6 +57,8 @@ final class FaceTimeAccessibilityRuntime {
   private let callApplicationBundleIdentifiers = [
     "com.apple.FaceTime",
     "com.apple.mobilephone",
+    "com.apple.notificationcenterui",
+    "com.apple.UserNotificationCenter",
   ]
 
   func snapshot() -> ActiveCallSummary? {
@@ -193,7 +195,7 @@ final class FaceTimeAccessibilityRuntime {
     NSWorkspace.shared.runningApplications.filter { application in
       guard let bundleIdentifier = application.bundleIdentifier else { return false }
       return callApplicationBundleIdentifiers.contains(bundleIdentifier)
-        || bundleIdentifier.localizedCaseInsensitiveContains("FaceTimeNotification")
+        || bundleIdentifier.localizedCaseInsensitiveContains("facetime")
         || bundleIdentifier.localizedCaseInsensitiveContains("mobilephone")
     }
   }
