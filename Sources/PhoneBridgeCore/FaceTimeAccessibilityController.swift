@@ -70,7 +70,7 @@ final class FaceTimeAccessibilityRuntime {
     let decline = findButton(in: elements, matching: ["decline", "reject"])
     let hangUp = findButton(
       in: elements,
-      matching: ["end call", "hang up", "disconnect"]
+      matching: ["end", "end call", "hang up", "disconnect"]
     )
     guard answer != nil || decline != nil || hangUp != nil else { return nil }
 
@@ -132,7 +132,7 @@ final class FaceTimeAccessibilityRuntime {
     case .hangUp:
       button = findButton(
         in: elements,
-        matching: ["end call", "hang up", "disconnect", "decline", "reject"]
+        matching: ["end", "end call", "hang up", "disconnect", "decline", "reject"]
       )
     case .hold:
       button = findButton(in: elements, matching: ["hold"])
@@ -267,13 +267,19 @@ final class FaceTimeAccessibilityRuntime {
     in elements: [ElementInfo],
     matching candidates: [String]
   ) -> ElementInfo? {
-    elements.first { info in
-      guard info.role == (kAXButtonRole as String) else { return false }
-      let label = normalize(info.label)
-      return candidates.contains { candidate in
-        label == candidate || label.contains(candidate)
+    let buttons = elements.filter { $0.role == (kAXButtonRole as String) }
+    let normalizedCandidates = candidates.map(normalize)
+    for candidate in normalizedCandidates {
+      if let exact = buttons.first(where: { normalize($0.label) == candidate }) {
+        return exact
       }
     }
+    for candidate in normalizedCandidates where candidate.count > 3 {
+      if let partial = buttons.first(where: { normalize($0.label).contains(candidate) }) {
+        return partial
+      }
+    }
+    return nil
   }
 
   private func findButton(in elements: [ElementInfo], exact value: String) -> ElementInfo? {
