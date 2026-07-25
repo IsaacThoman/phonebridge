@@ -59,7 +59,9 @@ public actor WebRTCSessionManager: WebRTCSignaling {
   private var sessions: [String: WebRTCPeerSession] = [:]
   private var callAudioTap: CallAudioTap?
   private var callAudioTapStarting = false
+  private var callAudioTapRetryTask: Task<Void, Never>?
   private var callAudioTapError: String?
+  private var virtualMicrophoneStartTask: Task<Void, Never>?
   private var virtualMicrophoneError: String?
   private let callAudioBundleIdentifier: String
 
@@ -88,25 +90,37 @@ public actor WebRTCSessionManager: WebRTCSignaling {
       session.close()
     }
     sessions.removeAll()
+    callAudioTapRetryTask?.cancel()
+    callAudioTapRetryTask = nil
+    virtualMicrophoneStartTask?.cancel()
+    virtualMicrophoneStartTask = nil
+    metrics.reset()
     beginCallAudioTapIfNeeded()
     let sessionID = UUID().uuidString.lowercased()
     let session = try WebRTCPeerSession(factory: factory)
     do {
       let sdp = try await session.answer(offerSDP: offer.sdp)
       sessions[sessionID] = session
-      Task {
+      if callAudioTap == nil, !callAudioTapStarting {
+        scheduleCallAudioTapRetry()
+      }
+      virtualMicrophoneStartTask = Task {
         try? await Task.sleep(for: .seconds(3))
+        guard !Task.isCancelled else { return }
         ensureVirtualMicrophone()
+        virtualMicrophoneStartTask = nil
       }
       return WebRTCAnswer(sessionID: sessionID, sdp: sdp)
     } catch {
       session.close()
+      stopMediaBridgeIfIdle()
       throw error
     }
   }
 
   public func close(sessionID: String) {
     sessions.removeValue(forKey: sessionID)?.close()
+    stopMediaBridgeIfIdle()
   }
 
   public func status() -> WebRTCMediaStatus {
@@ -157,12 +171,37 @@ public actor WebRTCSessionManager: WebRTCSignaling {
 
   private func completeCallAudioTapStart(tap: CallAudioTap?, error: String?) {
     callAudioTapStarting = false
+    guard !sessions.isEmpty else {
+      tap?.stop()
+      callAudioTap = nil
+      return
+    }
     callAudioTap = tap
     callAudioTapError = error
+    if tap == nil {
+      scheduleCallAudioTapRetry()
+    } else {
+      callAudioTapRetryTask?.cancel()
+      callAudioTapRetryTask = nil
+    }
+  }
+
+  private func scheduleCallAudioTapRetry() {
+    guard !sessions.isEmpty, callAudioTapRetryTask == nil else { return }
+    callAudioTapRetryTask = Task { [weak self] in
+      try? await Task.sleep(for: .seconds(1))
+      guard !Task.isCancelled else { return }
+      await self?.retryCallAudioTap()
+    }
+  }
+
+  private func retryCallAudioTap() {
+    callAudioTapRetryTask = nil
+    beginCallAudioTapIfNeeded()
   }
 
   private func ensureVirtualMicrophone() {
-    guard virtualMicrophone.device == nil else { return }
+    guard !sessions.isEmpty, virtualMicrophone.device == nil else { return }
     do {
       _ = try virtualMicrophone.start()
       virtualMicrophoneError = nil
@@ -170,6 +209,18 @@ public actor WebRTCSessionManager: WebRTCSignaling {
       virtualMicrophoneError =
         (error as? LocalizedError)?.errorDescription ?? String(describing: error)
     }
+  }
+
+  private func stopMediaBridgeIfIdle() {
+    guard sessions.isEmpty else { return }
+    callAudioTapRetryTask?.cancel()
+    callAudioTapRetryTask = nil
+    virtualMicrophoneStartTask?.cancel()
+    virtualMicrophoneStartTask = nil
+    callAudioTap?.stop()
+    callAudioTap = nil
+    callAudioTapStarting = false
+    virtualMicrophone.stop()
   }
 }
 
@@ -249,6 +300,15 @@ private final class WebRTCMediaMetrics: @unchecked Sendable {
     lock.lock()
     storedCallAudioFrameCount += UInt64(frame.frameCount)
     storedCallAudioPeak = max(storedCallAudioPeak, peak)
+    lock.unlock()
+  }
+
+  func reset() {
+    lock.lock()
+    storedBrowserAudioFrameCount = 0
+    storedBrowserAudioPeak = 0
+    storedCallAudioFrameCount = 0
+    storedCallAudioPeak = 0
     lock.unlock()
   }
 }
