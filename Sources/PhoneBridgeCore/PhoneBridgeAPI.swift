@@ -24,17 +24,20 @@ public actor PhoneBridgeAPI {
   private let version: String
   private let contacts: any ContactDirectory
   private let launcher: any CallLaunching
+  private let webRTC: any WebRTCSignaling
 
   public init(
     token: String,
     version: String,
     contacts: any ContactDirectory = MacContactDirectory(),
-    launcher: any CallLaunching = MacCallLauncher()
+    launcher: any CallLaunching = MacCallLauncher(),
+    webRTC: any WebRTCSignaling = WebRTCSessionManager()
   ) {
     self.token = token
     self.version = version
     self.contacts = contacts
     self.launcher = launcher
+    self.webRTC = webRTC
   }
 
   public static func generateToken(byteCount: Int = 24) throws -> String {
@@ -77,6 +80,19 @@ public actor PhoneBridgeAPI {
       }
       if request.method == "GET", request.path == "/api/bridge/probe" {
         return try .json(PrivateCallBridgeProbe().inspect())
+      }
+      if request.method == "POST", request.path == "/api/webrtc/sessions" {
+        let offer = try JSONDecoder().decode(WebRTCOffer.self, from: request.body)
+        return try await .json(
+          webRTC.createAnswer(for: offer),
+          status: 201,
+          reason: "Created"
+        )
+      }
+      if request.method == "DELETE", request.path.hasPrefix("/api/webrtc/sessions/") {
+        let sessionID = String(request.path.dropFirst("/api/webrtc/sessions/".count))
+        await webRTC.close(sessionID: sessionID)
+        return HTTPResponse(status: 204, reason: "No Content", body: Data())
       }
       if request.method == "GET", request.path == "/api/contacts" {
         let query = request.queryValue("q") ?? ""
@@ -136,7 +152,7 @@ public actor PhoneBridgeAPI {
       contacts: true,
       callLaunch: true,
       callControl: false,
-      webRTC: false,
+      webRTC: true,
       injectedBridge: false
     )
   }

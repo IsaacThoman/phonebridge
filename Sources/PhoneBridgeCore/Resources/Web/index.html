@@ -47,6 +47,20 @@
         </form>
       </section>
 
+      <section class="media-panel" aria-labelledby="mediaTitle">
+        <div>
+          <p class="section-kicker">Live audio</p>
+          <h2 id="mediaTitle">Browser media bridge</h2>
+          <p id="mediaStatus">
+            Connect this browser’s microphone and speaker to the Mac over WebRTC.
+          </p>
+        </div>
+        <button class="media-button" id="mediaButton" type="button" disabled>
+          Connect audio
+        </button>
+        <audio id="remoteAudio" autoplay></audio>
+      </section>
+
       <section class="results-section" aria-live="polite" aria-busy="false">
         <div class="section-heading">
           <div>

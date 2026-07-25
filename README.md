@@ -48,7 +48,20 @@ open dist/PhoneBridge.app
 
 # Inspect private call-control classes and selectors without invoking them.
 swift run phonebridge bridge probe --json
+
+# Exercise ICE/DTLS/SDP without requesting browser microphone permission.
+# This is a transport diagnostic, not a call-audio test.
+open "http://127.0.0.1:8742/?transport-only=1"
 ```
+
+## Current media path
+
+The web client can now establish and tear down an authenticated, audio-only
+WebRTC session with the Mac. The current native endpoint uses WebRTC's default
+Core Audio device, so it validates browser-to-Mac transport but does not yet
+route Phone/FaceTime process audio. The next media layer replaces that device
+with a Core Audio process tap for outgoing call audio and a virtual input path
+for browser-to-call audio.
 
 ## Safety model
 

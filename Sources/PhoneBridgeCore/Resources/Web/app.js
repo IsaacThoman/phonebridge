@@ -1,6 +1,9 @@
 const state = {
   token: localStorage.getItem("phonebridge.token") || "",
   pendingCall: null,
+  peerConnection: null,
+  localStream: null,
+  mediaSessionID: null,
 };
 
 const elements = {
@@ -21,6 +24,9 @@ const elements = {
   callName: document.querySelector("#callName"),
   callDetail: document.querySelector("#callDetail"),
   toast: document.querySelector("#toast"),
+  mediaButton: document.querySelector("#mediaButton"),
+  mediaStatus: document.querySelector("#mediaStatus"),
+  remoteAudio: document.querySelector("#remoteAudio"),
 };
 
 async function api(path, options = {}) {
@@ -46,6 +52,7 @@ function setPaired(paired, label = "") {
     : "Pairing required";
   elements.searchInput.disabled = !paired;
   elements.searchButton.disabled = !paired;
+  elements.mediaButton.disabled = !paired || !navigator.mediaDevices?.getUserMedia;
 }
 
 async function validatePairing() {
@@ -198,6 +205,127 @@ function showToast(message) {
   elements.toast.textContent = message;
   elements.toast.classList.add("visible");
   toastTimer = window.setTimeout(() => elements.toast.classList.remove("visible"), 4200);
+}
+
+elements.mediaButton.addEventListener("click", async () => {
+  if (state.peerConnection) {
+    await disconnectMedia();
+    return;
+  }
+  if (!navigator.mediaDevices?.getUserMedia) {
+    elements.mediaStatus.textContent =
+      "Microphone access requires HTTPS, except when using localhost on the Mac.";
+    return;
+  }
+
+  elements.mediaButton.disabled = true;
+  const transportOnly = new URLSearchParams(window.location.search).has("transport-only");
+  elements.mediaStatus.textContent = transportOnly
+    ? "Starting transport-only diagnostic…"
+    : "Requesting microphone access…";
+  try {
+    const peer = new RTCPeerConnection();
+    state.peerConnection = peer;
+    if (transportOnly) {
+      peer.addTransceiver("audio", { direction: "sendrecv" });
+    } else {
+      const stream = await withTimeout(
+        navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+          },
+          video: false,
+        }),
+        15000,
+        "Microphone permission timed out.",
+      );
+      state.localStream = stream;
+      for (const track of stream.getTracks()) peer.addTrack(track, stream);
+    }
+    peer.addEventListener("track", (event) => {
+      elements.remoteAudio.srcObject = event.streams[0] || new MediaStream([event.track]);
+    });
+    peer.addEventListener("connectionstatechange", () => {
+      elements.mediaStatus.textContent = `WebRTC · ${peer.connectionState}`;
+      if (["failed", "closed"].includes(peer.connectionState)) disconnectMedia();
+    });
+
+    const offer = await peer.createOffer();
+    await peer.setLocalDescription(offer);
+    await waitForIceGathering(peer);
+    const answer = await api("/api/webrtc/sessions", {
+      method: "POST",
+      body: JSON.stringify({
+        type: peer.localDescription.type,
+        sdp: peer.localDescription.sdp,
+      }),
+    });
+    state.mediaSessionID = answer.sessionID;
+    await peer.setRemoteDescription({ type: answer.type, sdp: answer.sdp });
+    elements.mediaButton.textContent = "Disconnect audio";
+    elements.mediaButton.classList.add("connected");
+    elements.mediaButton.disabled = false;
+    if (transportOnly) {
+      elements.mediaStatus.textContent = `WebRTC · ${peer.connectionState} · transport-only`;
+    }
+  } catch (error) {
+    await disconnectMedia(false);
+    elements.mediaStatus.textContent = `Audio connection failed: ${error.message}`;
+    elements.mediaButton.disabled = false;
+  }
+});
+
+async function withTimeout(promise, timeoutMilliseconds, message) {
+  let timer;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        timer = window.setTimeout(() => reject(new Error(message)), timeoutMilliseconds);
+      }),
+    ]);
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
+async function waitForIceGathering(peer) {
+  if (peer.iceGatheringState === "complete") return;
+  await new Promise((resolve) => {
+    const timeout = window.setTimeout(resolve, 3000);
+    peer.addEventListener(
+      "icegatheringstatechange",
+      () => {
+        if (peer.iceGatheringState === "complete") {
+          window.clearTimeout(timeout);
+          resolve();
+        }
+      },
+      { once: false },
+    );
+  });
+}
+
+async function disconnectMedia(notifyServer = true) {
+  const sessionID = state.mediaSessionID;
+  state.mediaSessionID = null;
+  state.peerConnection?.close();
+  state.peerConnection = null;
+  for (const track of state.localStream?.getTracks() || []) track.stop();
+  state.localStream = null;
+  elements.remoteAudio.srcObject = null;
+  elements.mediaButton.textContent = "Connect audio";
+  elements.mediaButton.classList.remove("connected");
+  elements.mediaButton.disabled = !state.token;
+  elements.mediaStatus.textContent =
+    "Connect this browser’s microphone and speaker to the Mac over WebRTC.";
+  if (notifyServer && sessionID) {
+    await api(`/api/webrtc/sessions/${encodeURIComponent(sessionID)}`, {
+      method: "DELETE",
+    }).catch(() => {});
+  }
 }
 
 validatePairing();

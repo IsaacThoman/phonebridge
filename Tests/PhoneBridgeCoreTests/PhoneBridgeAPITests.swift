@@ -37,13 +37,22 @@ private actor StubLauncher: CallLaunching {
   }
 }
 
+private actor StubWebRTC: WebRTCSignaling {
+  func createAnswer(for offer: WebRTCOffer) async throws -> WebRTCAnswer {
+    WebRTCAnswer(sessionID: "test-session", sdp: "v=0\r\n")
+  }
+
+  func close(sessionID: String) async {}
+}
+
 @Suite("PhoneBridge HTTP API")
 struct PhoneBridgeAPITests {
   let api = PhoneBridgeAPI(
     token: "correct-token",
     version: "test",
     contacts: StubContacts(),
-    launcher: StubLauncher()
+    launcher: StubLauncher(),
+    webRTC: StubWebRTC()
   )
 
   @Test("Health is public")
@@ -107,5 +116,22 @@ struct PhoneBridgeAPITests {
     #expect(response.status == 200)
     let decoded = try JSONDecoder().decode(PrivateCallBridgeCapabilities.self, from: response.body)
     #expect(decoded.classes.contains { $0.name == "TUCallCenter" })
+  }
+
+  @Test("WebRTC offers create authenticated sessions")
+  func webRTCOffer() async throws {
+    let body = try JSONEncoder().encode(WebRTCOffer(type: "offer", sdp: "v=0\r\n"))
+    let response = await api.handle(
+      HTTPRequest(
+        method: "POST",
+        target: "/api/webrtc/sessions",
+        headers: ["authorization": "Bearer correct-token"],
+        body: body
+      )
+    )
+    #expect(response.status == 201)
+    let answer = try JSONDecoder().decode(WebRTCAnswer.self, from: response.body)
+    #expect(answer.sessionID == "test-session")
+    #expect(answer.type == "answer")
   }
 }

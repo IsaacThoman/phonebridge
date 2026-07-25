@@ -9,9 +9,15 @@ let package = Package(
     .executable(name: "phonebridge", targets: ["phonebridge"]),
     .executable(name: "PhoneBridgeMacApp", targets: ["PhoneBridgeMacApp"]),
   ],
+  dependencies: [
+    .package(url: "https://github.com/stasel/WebRTC.git", from: "150.0.0")
+  ],
   targets: [
     .target(
       name: "PhoneBridgeCore",
+      dependencies: [
+        .product(name: "WebRTC", package: "WebRTC")
+      ],
       resources: [.process("Resources/Web")],
       linkerSettings: [
         .linkedFramework("AppKit"),

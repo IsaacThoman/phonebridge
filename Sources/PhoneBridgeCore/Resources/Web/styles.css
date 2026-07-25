@@ -228,6 +228,49 @@ h1 {
   border-top: 1px solid var(--line);
 }
 
+.media-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 32px;
+  align-items: center;
+  margin-bottom: 72px;
+  padding: 28px 30px;
+  background: linear-gradient(110deg, rgba(155, 124, 255, 0.12), rgba(217, 255, 67, 0.04));
+  border: 1px solid var(--line);
+  border-radius: 20px;
+}
+
+.media-panel h2 {
+  margin-bottom: 8px;
+  font-size: clamp(23px, 3vw, 32px);
+  letter-spacing: -0.035em;
+}
+
+.media-panel p:not(.section-kicker) {
+  max-width: 610px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.media-button {
+  min-width: 150px;
+  min-height: 46px;
+  padding: 0 18px;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 800;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 12px;
+}
+
+.media-button.connected {
+  color: var(--acid-ink);
+  background: var(--acid);
+}
+
 .section-heading {
   display: flex;
   gap: 24px;
@@ -532,6 +575,15 @@ dialog input:focus {
   .section-heading {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .media-panel {
+    grid-template-columns: 1fr;
+    margin-bottom: 48px;
+  }
+
+  .media-button {
+    width: 100%;
   }
 
   .contact-grid {
