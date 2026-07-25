@@ -82,7 +82,13 @@ public final class HTTPServer: @unchecked Sendable {
     }
     var importedItems: CFArray?
     let passphraseKey = kSecImportExportPassphrase as String
-    let options = [passphraseKey: configuration.tlsPassphrase ?? ""] as CFDictionary
+    var importOptions: [String: Any] = [
+      passphraseKey: configuration.tlsPassphrase ?? ""
+    ]
+    if #available(macOS 15.0, *) {
+      importOptions[kSecImportToMemoryOnly as String] = kCFBooleanTrue
+    }
+    let options = importOptions as CFDictionary
     let status = SecPKCS12Import(pkcs12 as CFData, options, &importedItems)
     guard status == errSecSuccess,
       let items = importedItems as? [[String: Any]],
