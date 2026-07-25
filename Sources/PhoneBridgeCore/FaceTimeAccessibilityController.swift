@@ -49,7 +49,7 @@ public enum CallControlAccessibilityAuthorization {
 
   @MainActor
   public static func confirmPendingCallHandoff(
-    timeout: TimeInterval = 3
+    timeout: TimeInterval = 8
   ) async -> Bool {
     await FaceTimeAccessibilityRuntime().confirmPendingCallHandoff(timeout: timeout)
   }
