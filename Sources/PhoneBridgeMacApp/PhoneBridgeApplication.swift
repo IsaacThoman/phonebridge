@@ -58,10 +58,21 @@ final class PhoneBridgeApplication: NSObject, NSApplicationDelegate {
       self.server = server
       tokenField.stringValue = token
 
-      let browserHost =
+      let reportedHost =
         configuration.isLoopback ? "127.0.0.1" : ProcessInfo.processInfo.hostName
+      let browserHost =
+        reportedHost.split(whereSeparator: \.isWhitespace).first.map(String.init)
+        ?? "127.0.0.1"
       let scheme = configuration.usesTLS ? "https" : "http"
-      let url = URL(string: "\(scheme)://\(browserHost):\(configuration.port)")!
+      var urlComponents = URLComponents()
+      urlComponents.scheme = scheme
+      urlComponents.host = browserHost
+      urlComponents.port = Int(configuration.port)
+      guard let url = urlComponents.url else {
+        throw PhoneBridgeError.invalidArguments(
+          "Could not form a web client URL from the Mac hostname."
+        )
+      }
       clientURL = url
       addressLabel.stringValue = url.absoluteString
 
