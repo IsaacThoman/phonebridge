@@ -33,6 +33,9 @@ public struct ActiveCallSummary: Codable, Sendable, Equatable {
   public let outgoing: Bool
   public let video: Bool
   public let canAnswer: Bool
+  public let canHangUp: Bool
+  public let canHold: Bool
+  public let canMute: Bool
   public let onHold: Bool
   public let muted: Bool
   public let supportsDTMF: Bool
@@ -46,6 +49,9 @@ public struct ActiveCallSummary: Codable, Sendable, Equatable {
     outgoing: Bool,
     video: Bool,
     canAnswer: Bool,
+    canHangUp: Bool = true,
+    canHold: Bool = true,
+    canMute: Bool = true,
     onHold: Bool,
     muted: Bool,
     supportsDTMF: Bool
@@ -58,6 +64,9 @@ public struct ActiveCallSummary: Codable, Sendable, Equatable {
     self.outgoing = outgoing
     self.video = video
     self.canAnswer = canAnswer
+    self.canHangUp = canHangUp
+    self.canHold = canHold
+    self.canMute = canMute
     self.onHold = onHold
     self.muted = muted
     self.supportsDTMF = supportsDTMF
@@ -112,6 +121,7 @@ struct DTMFKey: Equatable, Sendable {
 @MainActor
 public final class PrivateCallController: CallControlling {
   private let runtime = TelephonyUtilitiesRuntime()
+  private let accessibility = FaceTimeAccessibilityRuntime()
 
   public nonisolated init() {}
 
@@ -119,9 +129,16 @@ public final class PrivateCallController: CallControlling {
     guard let callCenter = runtime.sharedCallCenter() else {
       return CallControlSnapshot(available: false, calls: [])
     }
+    let privateCalls = runtime.calls(callCenter).map(runtime.summary)
+    if !privateCalls.isEmpty {
+      return CallControlSnapshot(available: true, calls: privateCalls)
+    }
+    if let accessibilityCall = accessibility.snapshot() {
+      return CallControlSnapshot(available: true, calls: [accessibilityCall])
+    }
     return CallControlSnapshot(
       available: true,
-      calls: runtime.calls(callCenter).map(runtime.summary)
+      calls: []
     )
   }
 
@@ -146,8 +163,7 @@ public final class PrivateCallController: CallControlling {
     }
 
     guard let call = selectedCall else {
-      let description = request.action == .answer ? "incoming" : "active"
-      throw PhoneBridgeError.invalidArguments("There is no \(description) call to control.")
+      return try accessibility.perform(request)
     }
 
     switch request.action {
@@ -225,10 +241,17 @@ private final class TelephonyUtilitiesRuntime: @unchecked Sendable {
       outgoing: boolValue(call, selector: "isOutgoing") ?? false,
       video: boolValue(call, selector: "isVideo") ?? false,
       canAnswer: boolValue(call, selector: "canAnswerCall") ?? false,
+      canHangUp: responds(call, selector: "disconnect"),
+      canHold: responds(call, selector: "hold") && responds(call, selector: "unhold"),
+      canMute: responds(call, selector: "setUplinkMuted:"),
       onHold: boolValue(call, selector: "isOnHold") ?? false,
       muted: boolValue(call, selector: "isUplinkMuted") ?? false,
       supportsDTMF: boolValue(call, selector: "supportsDTMFTones") ?? false
     )
+  }
+
+  private func responds(_ object: AnyObject, selector name: String) -> Bool {
+    class_getInstanceMethod(object_getClass(object), NSSelectorFromString(name)) != nil
   }
 
   func callID(_ call: AnyObject) -> String {

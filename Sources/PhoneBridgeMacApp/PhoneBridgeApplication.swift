@@ -12,6 +12,7 @@ final class PhoneBridgeApplication: NSObject, NSApplicationDelegate {
   private var addressLabel: NSTextField!
   private var tokenField: NSTextField!
   private var contactsButton: NSButton!
+  private var callControlButton: NSButton!
   private var server: HTTPServer?
   private var serverTask: Task<Void, Never>?
   private var clientURL: URL?
@@ -108,7 +109,7 @@ final class PhoneBridgeApplication: NSObject, NSApplicationDelegate {
 
   private func buildWindow() {
     window = NSWindow(
-      contentRect: NSRect(x: 0, y: 0, width: 540, height: 470),
+      contentRect: NSRect(x: 0, y: 0, width: 540, height: 555),
       styleMask: [.titled, .closable, .miniaturizable],
       backing: .buffered,
       defer: false
@@ -176,9 +177,27 @@ final class PhoneBridgeApplication: NSObject, NSApplicationDelegate {
     contactsHelp.textColor = .secondaryLabelColor
     contactsHelp.font = .systemFont(ofSize: 12)
 
+    let callControlTitle = sectionLabel("CALL CONTROL")
+    callControlButton = NSButton(
+      title:
+        CallControlAccessibilityAuthorization.isTrusted
+        ? "Call Control Access Granted" : "Grant Call Control Access",
+      target: self,
+      action: #selector(requestCallControl)
+    )
+    callControlButton.bezelStyle = .rounded
+
+    let callControlHelp = NSTextField(
+      wrappingLabelWithString:
+        "Allows answer, end, hold, mute, and keypad controls when macOS hides calls from the private call model."
+    )
+    callControlHelp.textColor = .secondaryLabelColor
+    callControlHelp.font = .systemFont(ofSize: 12)
+
     let views: [NSView] = [
       mark, title, subtitle, statusLabel!, addressTitle, addressLabel!, openButton, tokenTitle,
-      tokenField!, copyButton, contactsTitle, contactsButton!, contactsHelp,
+      tokenField!, copyButton, contactsTitle, contactsButton!, contactsHelp, callControlTitle,
+      callControlButton!, callControlHelp,
     ]
     for view in views {
       view.translatesAutoresizingMaskIntoConstraints = false
@@ -225,6 +244,20 @@ final class PhoneBridgeApplication: NSObject, NSApplicationDelegate {
       contactsHelp.leadingAnchor.constraint(equalTo: contactsButton.trailingAnchor, constant: 14),
       contactsHelp.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -32),
       contactsHelp.centerYAnchor.constraint(equalTo: contactsButton.centerYAnchor),
+
+      callControlTitle.leadingAnchor.constraint(equalTo: contactsTitle.leadingAnchor),
+      callControlTitle.topAnchor.constraint(equalTo: contactsButton.bottomAnchor, constant: 26),
+      callControlButton.leadingAnchor.constraint(equalTo: callControlTitle.leadingAnchor),
+      callControlButton.topAnchor.constraint(equalTo: callControlTitle.bottomAnchor, constant: 8),
+      callControlHelp.leadingAnchor.constraint(
+        equalTo: callControlButton.trailingAnchor,
+        constant: 14
+      ),
+      callControlHelp.trailingAnchor.constraint(
+        equalTo: content.trailingAnchor,
+        constant: -32
+      ),
+      callControlHelp.centerYAnchor.constraint(equalTo: callControlButton.centerYAnchor),
     ])
   }
 
@@ -262,6 +295,26 @@ final class PhoneBridgeApplication: NSObject, NSApplicationDelegate {
         }
       }
     }
+  }
+
+  @objc private func requestCallControl() {
+    if CallControlAccessibilityAuthorization.isTrusted {
+      callControlButton.title = "Call Control Access Granted"
+      callControlButton.isEnabled = false
+      return
+    }
+    _ = CallControlAccessibilityAuthorization.request()
+    if CallControlAccessibilityAuthorization.isTrusted {
+      callControlButton.title = "Call Control Access Granted"
+      callControlButton.isEnabled = false
+    } else {
+      callControlButton.title = "Open Accessibility Settings"
+      callControlButton.action = #selector(openAccessibilitySettings)
+    }
+  }
+
+  @objc private func openAccessibilitySettings() {
+    CallControlAccessibilityAuthorization.openSettings()
   }
 
   @objc private func openContactsSettings() {

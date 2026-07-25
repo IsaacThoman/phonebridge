@@ -139,13 +139,17 @@ function renderLiveCalls(calls) {
 
     const actions = document.createElement("div");
     actions.className = "call-control-actions";
-    const controls = call.canAnswer
-      ? [["answer", "Answer"], ["hang_up", "Decline"]]
-      : [
-          [call.onHold ? "resume" : "hold", call.onHold ? "Resume" : "Hold"],
-          [call.muted ? "unmute" : "mute", call.muted ? "Unmute" : "Mute"],
-          ["hang_up", "End"],
-        ];
+    const controls = [];
+    if (call.canAnswer) controls.push(["answer", "Answer"]);
+    if (!call.canAnswer && call.canHold !== false) {
+      controls.push([call.onHold ? "resume" : "hold", call.onHold ? "Resume" : "Hold"]);
+    }
+    if (!call.canAnswer && call.canMute !== false) {
+      controls.push([call.muted ? "unmute" : "mute", call.muted ? "Unmute" : "Mute"]);
+    }
+    if (call.canHangUp !== false) {
+      controls.push(["hang_up", call.canAnswer ? "Decline" : "End"]);
+    }
     for (const [action, label] of controls) {
       const button = document.createElement("button");
       button.type = "button";

@@ -22,6 +22,7 @@ let package = Package(
       resources: [.process("Resources/Web")],
       linkerSettings: [
         .linkedFramework("AppKit"),
+        .linkedFramework("ApplicationServices"),
         .linkedFramework("AudioToolbox"),
         .linkedFramework("CoreAudio"),
         .linkedFramework("Contacts"),
